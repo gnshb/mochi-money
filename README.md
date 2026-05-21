@@ -4,9 +4,9 @@ A kawaii, offline, open-source Android app that turns the payment SMS already on
 phone into a spending dashboard.
 
 <p align="center">
-  <img src="docs/img/dashboard.png" alt="Dashboard" width="240">
-  <img src="docs/img/categorize.png" alt="Categories with regex patterns" width="240">
-  <img src="docs/img/tidy.png" alt="Categorize empty state" width="240">
+  <img src="img/dashboard.png" alt="Dashboard" width="240">
+  <img src="img/categorize.png" alt="Categories with regex patterns" width="240">
+  <img src="img/tidy.png" alt="Categorize empty state" width="240">
 </p>
 
 ## Install
