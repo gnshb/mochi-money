@@ -1,0 +1,51 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+.externalNativeBuild/
+.cxx/
+captures/
+
+# Android Studio / IntelliJ local state
+.idea/
+*.iml
+local.properties
+
+# SDKs and local Android installs that should not be vendored.
+# The Gradle wrapper files under gradle/wrapper/ should be committed.
+Android/Sdk/
+android-sdk/
+
+# Signing material and personal release outputs
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+release/
+dist/
+*.apk
+*.aab
+
+# Logs and local reports
+*.log
+*.hprof
+reports/
+test-results/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Sensitive local QA data
+*.sms
+*.sms.local
+real-sms/
+exports/
+
+# AI / coding-assistant scratch dirs
+.agents/
+.codex/
+.claude/
+.kotlin/
