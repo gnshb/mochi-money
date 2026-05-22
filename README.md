@@ -26,6 +26,17 @@ cd mochi-money
 ./gradlew :app:assembleRelease        # minified release APK (~2 MB)
 ```
 
+## Changelog
+
+### v0.2.0
+
+- Added Splitwise support with group selection and imported owed/owing expenses.
+- Improved the dashboard analytics with category net totals sorted by spend.
+
+### v0.1.0
+
+- Initial release.
+
 ## License
 
 GPL v3. See [LICENSE](LICENSE).

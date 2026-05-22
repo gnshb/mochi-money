@@ -267,9 +267,35 @@ private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifi
     val budget = state.monthlyBudget
     val left = (budget - spent).coerceAtLeast(0)
     val pace = if (budget > 0) (spent.toFloat() / budget.toFloat()).coerceIn(0f, 1f) else 0f
-    val topCategory = state.categories
-        .filterNot { it.id == DefaultCategoryIds.UNCATEGORIZED || it.id == DefaultCategoryIds.INCOME }
-        .maxByOrNull { it.spentPaise }
+    val categoryNetItems = remember(state.categories, state.transactions) {
+        val today = java.time.LocalDate.now()
+        val monthTransactions = state.transactions.filter {
+            it.occurredOn.year == today.year && it.occurredOn.month == today.month
+        }
+        state.categories
+            .filterNot { it.id == DefaultCategoryIds.UNCATEGORIZED }
+            .mapNotNull { category ->
+                val categoryTransactions = monthTransactions.filter { it.categoryId == category.id }
+                val categorySpent = categoryTransactions
+                    .filterNot { it.isIncoming }
+                    .sumOf { it.amountPaise }
+                val categoryReceived = categoryTransactions
+                    .filter { it.isIncoming }
+                    .sumOf { it.amountPaise }
+                if (categorySpent == 0L && categoryReceived == 0L) return@mapNotNull null
+                CategoryNetItem(
+                    category = category,
+                    spentPaise = categorySpent,
+                    receivedPaise = categoryReceived,
+                    netPaise = categoryReceived - categorySpent,
+                )
+            }
+            .sortedWith(
+                compareByDescending<CategoryNetItem> { it.spentPaise }
+                    .thenByDescending { kotlin.math.abs(it.netPaise) }
+                    .thenBy { it.category.label },
+            )
+    }
     val txnCount = state.transactions.size
 
     Card(
@@ -298,27 +324,8 @@ private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifi
             if (budget > 0) {
                 BudgetPaceRow(pace = pace, spent = spent, budget = budget)
             }
-            if (topCategory != null && topCategory.spentPaise > 0L) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CategoryIconBubble(
-                        icon = iconForCategory(topCategory.kind),
-                        color = categoryColor(topCategory.kind),
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Top spend · ${topCategory.label}",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            "${formatCurrency(topCategory.spentPaise)} so far",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            if (categoryNetItems.isNotEmpty()) {
+                CategoryNetList(items = categoryNetItems)
             }
             if (state.uncategorizedCount > 0) {
                 Text(
@@ -331,7 +338,70 @@ private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifi
     }
 }
 
+private data class CategoryNetItem(
+    val category: CategoryUi,
+    val spentPaise: Long,
+    val receivedPaise: Long,
+    val netPaise: Long,
+)
+
 private data class AnalyticItem(val label: String, val value: String)
+
+@Composable
+private fun CategoryNetList(items: List<CategoryNetItem>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Category net",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        items.forEach { item ->
+            CategoryNetRow(item = item)
+        }
+    }
+}
+
+@Composable
+private fun CategoryNetRow(item: CategoryNetItem) {
+    val category = item.category
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        CategoryIconBubble(
+            icon = iconForCategory(category.kind),
+            color = categoryColor(category.kind),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                category.label,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                "Spend ${formatCurrency(item.spentPaise)} · Received ${formatCurrency(item.receivedPaise)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                if (item.netPaise >= 0) "+${formatCurrency(item.netPaise)}" else "-${formatCurrency(-item.netPaise)}",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (item.netPaise >= 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+            Text(
+                "net",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
 @Composable
 private fun AnalyticsGrid(items: List<AnalyticItem>, columns: Int) {
