@@ -66,7 +66,6 @@ fun DashboardScreen(
         ) {
             item { SpendingPieCard(state = state, onMochiTap = actions.onRefresh) }
             item { AnalyticsBlock(state = state) }
-            item { state.scanStatus?.let { ScanStatusCard(it) } }
             item { Spacer(Modifier.height(12.dp)) }
         }
     }
@@ -132,7 +131,7 @@ private fun SpendingPieCard(
                             style = MaterialTheme.typography.headlineMedium,
                         )
                         Text(
-                            "spent · ${slices.size} categories",
+                            "spent · top 3 categories",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -350,11 +349,6 @@ private data class AnalyticItem(val label: String, val value: String)
 @Composable
 private fun CategoryNetList(items: List<CategoryNetItem>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Category net",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         items.forEach { item ->
             CategoryNetRow(item = item)
         }
@@ -378,28 +372,23 @@ private fun CategoryNetRow(item: CategoryNetItem) {
                 category.label,
                 style = MaterialTheme.typography.titleMedium,
             )
-            Text(
-                "Spend ${formatCurrency(item.spentPaise)} · Received ${formatCurrency(item.receivedPaise)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (category.id == DefaultCategoryIds.SPLITWISE) {
+                Text(
+                    "Spend ${formatCurrency(item.spentPaise)} · Received ${formatCurrency(item.receivedPaise)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                if (item.netPaise >= 0) "+${formatCurrency(item.netPaise)}" else "-${formatCurrency(-item.netPaise)}",
-                style = MaterialTheme.typography.titleMedium,
-                color = if (item.netPaise >= 0) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
-            Text(
-                "net",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            if (item.netPaise >= 0) "+${formatCurrency(item.netPaise)}" else "-${formatCurrency(-item.netPaise)}",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (item.netPaise >= 0) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
     }
 }
 
@@ -483,22 +472,5 @@ private fun BudgetPaceRow(pace: Float, spent: Long, budget: Long) {
                     .background(MaterialTheme.colorScheme.primary),
             )
         }
-    }
-}
-
-@Composable
-private fun ScanStatusCard(message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MochiCardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Text(
-            message,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
     }
 }

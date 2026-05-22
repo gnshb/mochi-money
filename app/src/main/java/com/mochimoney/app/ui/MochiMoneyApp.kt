@@ -7,12 +7,17 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -57,7 +63,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
-private const val MinRefreshMillis = 1200L
+private const val MinRefreshMillis = 1500L
+private const val StatusVisibleMillis = 1500L
 
 @Composable
 fun MochiMoneyRoot(
@@ -156,7 +163,7 @@ fun MochiMoneyApp(
                 settings = state.settings.copy(splitwise = container.preferences.toSplitwiseSettingsUi()),
             )
         }
-        // Hold the refreshing state for at least 1.2s so the mochi pulse is visible
+        // Hold the refreshing state briefly so the mochi pulse is visible
         // even when the scan completes in a few hundred ms.
         val elapsed = System.currentTimeMillis() - startMillis
         if (state.isRefreshing && elapsed < MinRefreshMillis) {
@@ -167,14 +174,9 @@ fun MochiMoneyApp(
 
     LaunchedEffect(state.scanStatus) {
         val status = state.scanStatus ?: return@LaunchedEffect
-        if (status.startsWith("Scan complete") || status.startsWith("Saved") ||
-            status.startsWith("Applied") || status.startsWith("Monthly budget") ||
-            status.startsWith("Splitwise") || status.startsWith("Connected")
-        ) {
-            kotlinx.coroutines.delay(2500)
-            if (state.scanStatus == status) {
-                state = state.copy(scanStatus = null)
-            }
+        kotlinx.coroutines.delay(StatusVisibleMillis)
+        if (state.scanStatus == status) {
+            state = state.copy(scanStatus = null)
         }
     }
 
@@ -400,13 +402,23 @@ private fun CompactAppScaffold(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        Box(Modifier.padding(innerPadding)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
             KawaiiBackdrop()
             MochiTabContent(
                 tab = selectedTab,
                 state = state,
                 actions = navigationActions,
                 modifier = Modifier.fillMaxSize(),
+            )
+            ScanStatusPopup(
+                message = state.scanStatus,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
     }
@@ -457,6 +469,42 @@ private fun WideAppScaffold(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 8.dp),
+                )
+                ScanStatusPopup(
+                    message = state.scanStatus,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanStatusPopup(
+    message: String?,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = message != null,
+        modifier = modifier,
+    ) {
+        if (message != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 560.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.96f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            ) {
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
