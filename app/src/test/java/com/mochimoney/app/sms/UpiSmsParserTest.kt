@@ -55,6 +55,21 @@ class UpiSmsParserTest {
     }
 
     @Test
+    fun parsesIciciDebitWithCreditedCounterparty() {
+        val body = "ICICI Bank Acct XX756 debited for Rs 468.00 on 19-May-26; Swiggy Limited credited. UPI:613969951619. Call 18002662 for dispute. SMS BLOCK 756 to 9215676766."
+
+        val result = parser.parse(RawSms(body = body, sender = "AD-ICICIT-S"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(46_800L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 19), transaction.occurredOn)
+        assertEquals("Swiggy Limited", transaction.counterparty)
+        assertEquals("756", transaction.accountSuffix)
+    }
+
+    @Test
     fun ignoresOtpMessages() {
         val result = parser.parse(RawSms(body = "123456 is your UPI OTP. Do not share it."))
 

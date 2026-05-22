@@ -207,7 +207,7 @@ class UpiSmsParser(
         val referencePattern = Regex(
             "(?i)\\b(?:upi\\s*)?(?:ref(?:erence)?\\s*(?:no\\.?|num|number|id)?|refno|rrn|utr|txn(?:\\s*(?:id|no))?|transaction\\s*(?:id|no))[:\\-\\s#]*([a-z0-9]{6,})\\b"
         )
-        val accountPattern = Regex("(?i)\\bA/?[Cc]\\.?\\s*(?:no\\.?\\s*)?[xX*]*(\\d{3,6})\\b")
+        val accountPattern = Regex("(?i)\\b(?:A/?[Cc]|Acct|Account)\\.?\\s*(?:no\\.?\\s*)?[xX*]*(\\d{3,6})\\b")
 
         private const val STOP = "(?=\\s+(?:Refno|Ref\\b|Ref\\.|Ref:|UPI|RRN|UTR|If\\s+not|on\\s+date|on\\s+\\d|dated|via|through|using|info|info:|Avl|Available|Bal|Balance|-[A-Z]{2,5}\\b|\\.|,)|$)"
 
@@ -216,7 +216,9 @@ class UpiSmsParser(
             Regex("(?i)\\b(?:paid|sent|payment)\\s+to\\s+(.+?)$STOP"),
             Regex("(?i)\\bto\\s+VPA\\s+(.+?)$STOP"),
             Regex("(?i)\\bto\\s+(.+?)\\s+(?:on|via|using|through)\\s+UPI"),
-            Regex("(?i)\\btowards\\s+(.+?)$STOP")
+            Regex("(?i)\\btowards\\s+(.+?)$STOP"),
+            // ICICI style: "Acct XX debited for Rs X on dd-Mon-yy; Swiggy Limited credited."
+            Regex("(?i);\\s*(.+?)\\s+credited\\b")
         )
         val creditCounterpartyPatterns = listOf(
             Regex("(?i)\\bfrom\\s+VPA\\s+(.+?)$STOP"),
