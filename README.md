@@ -28,10 +28,14 @@ cd mochi-money
 
 ## Changelog
 
+### v0.2.1
+
+- Fixed category keyword edits so removing a pattern re-evaluates existing transactions and unmatches stale classifications.
+
 ### v0.2.0
 
 - Added Splitwise support with group selection and imported owed/owing expenses.
-- Improved the dashboard analytics with category net totals sorted by spend.
+- Improved the dashboard analytics with category net totals sorted by spend and a brief scan-status popup.
 
 ### v0.1.0
 

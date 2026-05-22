@@ -3,6 +3,7 @@ package com.mochimoney.app.data
 import android.content.Context
 import androidx.room.Room
 import com.mochimoney.app.data.local.MochiMoneyDatabase
+import com.mochimoney.app.data.repository.ExistingTransactionCategoryRefresher
 import com.mochimoney.app.data.repository.RoomCategoryRepository
 import com.mochimoney.app.data.repository.RoomUpiTransactionRepository
 import com.mochimoney.app.data.splitwise.SplitwiseApiClient
@@ -203,20 +204,10 @@ class AppContainer(context: Context) {
     }
 
     fun applyKeywordRulesToExisting(): Int {
-        val transactions = transactionRepository.getAll()
-        var changed = 0
-        transactions.forEach { transaction ->
-            val suggested = categoryRepository.suggestFor(transaction)
-            if (
-                suggested.id != DefaultCategoryIds.UNCATEGORIZED &&
-                suggested.id != transaction.categoryId &&
-                transaction.categoryId in setOf(DefaultCategoryIds.UNCATEGORIZED, DefaultCategoryIds.OTHER)
-            ) {
-                transactionRepository.updateCategory(transaction.id, suggested.id)
-                changed += 1
-            }
-        }
-        return changed
+        return ExistingTransactionCategoryRefresher.refresh(
+            categoryRepository = categoryRepository,
+            transactionRepository = transactionRepository,
+        )
     }
 
     private fun String.toKeywordSet(): Set<String> =
