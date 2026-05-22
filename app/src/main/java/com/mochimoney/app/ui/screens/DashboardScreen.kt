@@ -374,7 +374,7 @@ private fun CategoryNetRow(item: CategoryNetItem) {
             )
             if (category.id == DefaultCategoryIds.SPLITWISE) {
                 Text(
-                    "Spend ${formatCurrency(item.spentPaise)} · Received ${formatCurrency(item.receivedPaise)}",
+                    "You owe ${formatCurrency(item.spentPaise)} · Owed ${formatCurrency(item.receivedPaise)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

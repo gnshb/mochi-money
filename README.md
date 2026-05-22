@@ -28,6 +28,10 @@ cd mochi-money
 
 ## Changelog
 
+### v0.2.2
+
+- Updated Splitwise dashboard wording from Spend/Received to You owe/Owed.
+
 ### v0.2.1
 
 - Fixed category keyword edits so removing a pattern re-evaluates existing transactions and unmatches stale classifications.
