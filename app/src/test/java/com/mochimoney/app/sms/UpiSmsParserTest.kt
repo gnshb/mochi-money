@@ -70,6 +70,62 @@ class UpiSmsParserTest {
     }
 
     @Test
+    fun parsesLinkedAccountDebitCounterparty() {
+        val body = "Your A/c No.XXXX2601 is debited with Rs.40.00 on 22-05-2026 07:02 AM and UTIB A/c linked to gpay-11254951452@okbizaxis is credited (UPI Ref No.070231860496).Current AVBL bal is Rs.56184.82 - TMB"
+
+        val result = parser.parse(RawSms(body = body, sender = "TM-BANK"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(4_000L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 22), transaction.occurredOn)
+        assertEquals("gpay-11254951452@okbizaxis", transaction.counterparty)
+        assertEquals("070231860496", transaction.referenceNumber)
+        assertEquals("2601", transaction.accountSuffix)
+    }
+
+    @Test
+    fun parsesLinkedAccountPaytmMerchantCounterparty() {
+        val body = "Your A/c No.XXXX2601 is debited with Rs.690.22 on 17-05-2026 01:34 PM and YESB A/c linked to paytm-jiomartgrocery@ptybl is credited (UPI Ref No.133409534355).Current AVBL bal is Rs.348427.82 - TMB"
+
+        val result = parser.parse(RawSms(body = body, sender = "TM-BANK"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(69_022L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 17), transaction.occurredOn)
+        assertEquals("paytm-jiomartgrocery@ptybl", transaction.counterparty)
+        assertEquals("133409534355", transaction.referenceNumber)
+        assertEquals("2601", transaction.accountSuffix)
+    }
+
+    @Test
+    fun parsesCreditCardUpiSpendAsDebitCounterparty() {
+        val body = "Dear Customer, your Credit card at Rajasri Fuels has been used for a UPI transaction of INR 314.4 and the reference number is 071210138665.Available Limit is Rs. 49685.60.If it's not you, kindly contact our Customer Care -TMB"
+
+        val result = parser.parse(
+            RawSms(
+                body = body,
+                sender = "TM-BANK",
+                receivedAtMillis = java.time.ZonedDateTime
+                    .of(2026, 5, 21, 7, 12, 0, 0, ZoneId.of("Asia/Kolkata"))
+                    .toInstant()
+                    .toEpochMilli(),
+            ),
+        )
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(31_440L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 21), transaction.occurredOn)
+        assertEquals("Rajasri Fuels", transaction.counterparty)
+        assertEquals("071210138665", transaction.referenceNumber)
+    }
+
+    @Test
     fun ignoresOtpMessages() {
         val result = parser.parse(RawSms(body = "123456 is your UPI OTP. Do not share it."))
 

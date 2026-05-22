@@ -28,6 +28,10 @@ cd mochi-money
 
 ## Changelog
 
+### v0.2.3
+
+- Fixed counterparty parsing for ICICI-style credited merchant SMS and TMB linked-account/credit-card UPI messages.
+
 ### v0.2.2
 
 - Updated Splitwise dashboard wording from Spend/Received to You owe/Owed.

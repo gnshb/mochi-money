@@ -177,6 +177,7 @@ class UpiSmsParser(
         val debitWords = listOf(
             "debited", "debit", "paid", "sent", "spent", "transferred", "withdrawn",
             "deducted", "purchase", "paying", "txn of", "txn:", "txn for",
+            "used for", "has been used",
         )
         val creditWords = listOf(
             "credited", "credit", "received", "deposited", "added to", "refund",
@@ -205,13 +206,16 @@ class UpiSmsParser(
             "\\b([0-3]?\\d)[/-]([0-1]?\\d|[A-Za-z]{3,9})[/-]([0-9]{2,4})\\b"
         )
         val referencePattern = Regex(
-            "(?i)\\b(?:upi\\s*)?(?:ref(?:erence)?\\s*(?:no\\.?|num|number|id)?|refno|rrn|utr|txn(?:\\s*(?:id|no))?|transaction\\s*(?:id|no))[:\\-\\s#]*([a-z0-9]{6,})\\b"
+            "(?i)\\b(?:upi\\s*)?(?:reference\\s+number\\s+(?:is\\s+)?|ref(?:erence)?\\s*(?:no\\.?|num|number|id)?|refno|rrn|utr|txn(?:\\s*(?:id|no))?|transaction\\s*(?:id|no))[:\\-\\s#]*([a-z0-9]{6,})\\b"
         )
         val accountPattern = Regex("(?i)\\b(?:A/?[Cc]|Acct|Account)\\.?\\s*(?:no\\.?\\s*)?[xX*]*(\\d{3,6})\\b")
 
         private const val STOP = "(?=\\s+(?:Refno|Ref\\b|Ref\\.|Ref:|UPI|RRN|UTR|If\\s+not|on\\s+date|on\\s+\\d|dated|via|through|using|info|info:|Avl|Available|Bal|Balance|-[A-Z]{2,5}\\b|\\.|,)|$)"
 
         val debitCounterpartyPatterns = listOf(
+            Regex("(?i)\\blinked\\s+to\\s+(.+?)\\s+is\\s+credited\\b"),
+            Regex("(?i)\\bcard\\s+at\\s+(.+?)\\s+has\\s+been\\s+used\\b"),
+            Regex("(?i)\\bat\\s+(.+?)\\s+has\\s+been\\s+used\\b"),
             Regex("(?i)\\b(?:trf|transfer(?:red)?)\\s+to\\s+(.+?)$STOP"),
             Regex("(?i)\\b(?:paid|sent|payment)\\s+to\\s+(.+?)$STOP"),
             Regex("(?i)\\bto\\s+VPA\\s+(.+?)$STOP"),
