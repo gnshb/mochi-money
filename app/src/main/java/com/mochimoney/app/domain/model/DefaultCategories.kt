@@ -9,6 +9,7 @@ object DefaultCategoryIds {
     const val HEALTH = "health"
     const val TRANSFERS = "transfers"
     const val INCOME = "income"
+    const val SPLITWISE = "splitwise"
     const val OTHER = "other"
     const val UNCATEGORIZED = "uncategorized"
 }
@@ -79,9 +80,14 @@ object DefaultCategories {
         ),
         TransactionCategory(
             id = DefaultCategoryIds.INCOME,
-            name = "Income",
+            name = "Credit",
             colorHex = "#059669",
             keywords = setOf("salary|payroll|refund|cashback|interest")
+        ),
+        TransactionCategory(
+            id = DefaultCategoryIds.SPLITWISE,
+            name = "Splitwise",
+            colorHex = "#0EA5A4",
         ),
         TransactionCategory(
             id = DefaultCategoryIds.OTHER,

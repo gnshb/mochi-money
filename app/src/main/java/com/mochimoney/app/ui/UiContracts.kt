@@ -68,6 +68,22 @@ enum class CategoryKind {
 data class SettingsUi(
     val scanSmsAutomatically: Boolean = true,
     val budgetAlerts: Boolean = true,
+    val splitwise: SplitwiseSettingsUi = SplitwiseSettingsUi(),
+)
+
+@Immutable
+data class SplitwiseSettingsUi(
+    val enabled: Boolean = false,
+    val apiKeyConfigured: Boolean = false,
+    val currentUserLabel: String = "",
+    val groups: List<SplitwiseGroupUi> = emptyList(),
+    val selectedGroupIds: Set<Long> = emptySet(),
+)
+
+@Immutable
+data class SplitwiseGroupUi(
+    val id: Long,
+    val name: String,
 )
 
 data class MochiMoneyActions(
@@ -84,6 +100,10 @@ data class MochiMoneyActions(
     val onSetSenderPattern: (pattern: String) -> Unit = {},
     val onToggleAutoScan: (Boolean) -> Unit = {},
     val onToggleBudgetAlerts: (Boolean) -> Unit = {},
+    val onToggleSplitwise: (Boolean) -> Unit = {},
+    val onConnectSplitwise: (apiKey: String) -> Unit = {},
+    val onSelectSplitwiseGroup: (groupId: Long, selected: Boolean) -> Unit = { _, _ -> },
+    val onSyncSplitwise: () -> Unit = {},
 )
 
 fun sampleMochiMoneyUiState(): MochiMoneyUiState {

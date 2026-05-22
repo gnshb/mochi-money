@@ -15,7 +15,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -29,13 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mochimoney.app.ui.MochiMoneyActions
 import com.mochimoney.app.ui.MochiMoneyUiState
 import com.mochimoney.app.ui.components.CategoryIconBubble
 import com.mochimoney.app.ui.components.MochiCardShape
 import com.mochimoney.app.ui.components.MochiIcons
-import com.mochimoney.app.ui.components.SectionTitle
 import com.mochimoney.app.ui.components.formatCurrency
 import com.mochimoney.app.ui.components.rememberMochiHapticClick
 import com.mochimoney.app.ui.theme.MochiMint
@@ -64,9 +67,6 @@ private fun SettingsContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            SectionTitle("Settings")
-        }
-        item {
             PermissionCard(state = state, actions = actions)
         }
         item {
@@ -74,6 +74,9 @@ private fun SettingsContent(
         }
         item {
             SenderFilterCard(state = state, actions = actions)
+        }
+        item {
+            SplitwiseCard(state = state, actions = actions)
         }
         item {
             SettingsGroup {
@@ -230,6 +233,132 @@ private fun ActiveFiltersList(pattern: String, onRemove: () -> Unit) {
             onClick = rememberMochiHapticClick(onClick = onRemove),
             label = { Text(pattern) },
             trailingIcon = { Text("✕", style = MaterialTheme.typography.labelLarge) },
+        )
+    }
+}
+
+@Composable
+private fun SplitwiseCard(
+    state: MochiMoneyUiState,
+    actions: MochiMoneyActions,
+) {
+    val splitwise = state.settings.splitwise
+    var apiKey by rememberSaveable(splitwise.apiKeyConfigured) { mutableStateOf("") }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val connectEnabled = apiKey.isNotBlank() || splitwise.apiKeyConfigured
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = MochiCardShape,
+    ) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                CategoryIconBubble(
+                    icon = MochiIcons.Settings,
+                    color = if (splitwise.enabled) MochiMint else MaterialTheme.colorScheme.outline,
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Splitwise", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (splitwise.apiKeyConfigured) {
+                            "Connected${splitwise.currentUserLabel.takeIf { it.isNotBlank() }?.let { " as $it" }.orEmpty()}."
+                        } else {
+                            "Import your net share from selected groups."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = splitwise.enabled,
+                    onCheckedChange = actions.onToggleSplitwise,
+                )
+            }
+
+            AnimatedVisibility(visible = splitwise.enabled) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(if (splitwise.apiKeyConfigured) "New API key" else "API key") },
+                        placeholder = { Text(if (splitwise.apiKeyConfigured) "Leave blank to reconnect with saved key" else "Splitwise personal API key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = rememberMochiHapticClick(enabled = connectEnabled) {
+                                focusManager.clearFocus()
+                                actions.onConnectSplitwise(apiKey)
+                                apiKey = ""
+                            },
+                            enabled = connectEnabled,
+                        ) {
+                            Text(if (splitwise.apiKeyConfigured) "Reconnect" else "Connect")
+                        }
+                        OutlinedButton(
+                            onClick = rememberMochiHapticClick(
+                                enabled = splitwise.apiKeyConfigured && splitwise.selectedGroupIds.isNotEmpty(),
+                                onClick = actions.onSyncSplitwise,
+                            ),
+                            enabled = splitwise.apiKeyConfigured && splitwise.selectedGroupIds.isNotEmpty(),
+                        ) {
+                            Text("Sync")
+                        }
+                    }
+
+                    if (splitwise.groups.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "Groups",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            splitwise.groups.forEach { group ->
+                                SplitwiseGroupRow(
+                                    name = group.name,
+                                    selected = group.id in splitwise.selectedGroupIds,
+                                    onSelectedChange = { selected ->
+                                        actions.onSelectSplitwiseGroup(group.id, selected)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SplitwiseGroupRow(
+    name: String,
+    selected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = onSelectedChange,
+        )
+        Text(
+            text = name,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

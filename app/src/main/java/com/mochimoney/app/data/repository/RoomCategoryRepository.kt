@@ -7,6 +7,7 @@ import com.mochimoney.app.data.local.toDomain
 import com.mochimoney.app.data.local.toEntity
 import com.mochimoney.app.data.local.toCounterpartyKey
 import com.mochimoney.app.domain.model.DefaultCategories
+import com.mochimoney.app.domain.model.DefaultCategoryIds
 import com.mochimoney.app.domain.model.TransactionCategory
 import com.mochimoney.app.domain.model.UpiTransaction
 import com.mochimoney.app.domain.repository.CategoryRepository
@@ -17,13 +18,18 @@ class RoomCategoryRepository(
     private val fallback: CategoryRepository = DefaultCategoryRepository()
 ) : CategoryRepository {
     fun seedDefaults() {
-        val existingIds = dao.getAll().map { it.id }.toSet()
+        val existingCategories = dao.getAll()
+        val existingIds = existingCategories.map { it.id }.toSet()
         val missingDefaults = DefaultCategories.all
             .filterNot { it.id in existingIds }
             .map { it.toEntity() }
         if (missingDefaults.isNotEmpty()) {
             dao.upsertAll(missingDefaults)
         }
+
+        existingCategories
+            .firstOrNull { it.id == DefaultCategoryIds.INCOME && it.name == "Income" }
+            ?.let { dao.upsert(it.copy(name = "Credit")) }
     }
 
     override fun getCategories(): List<TransactionCategory> =

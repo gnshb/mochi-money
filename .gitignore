@@ -21,6 +21,9 @@ android-sdk/
 *.keystore
 keystore.properties
 signing.properties
+.env
+.env.*
+!.env.example
 release/
 dist/
 *.apk

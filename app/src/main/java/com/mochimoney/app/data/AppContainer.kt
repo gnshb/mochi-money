@@ -5,8 +5,13 @@ import androidx.room.Room
 import com.mochimoney.app.data.local.MochiMoneyDatabase
 import com.mochimoney.app.data.repository.RoomCategoryRepository
 import com.mochimoney.app.data.repository.RoomUpiTransactionRepository
+import com.mochimoney.app.data.splitwise.SplitwiseApiClient
+import com.mochimoney.app.data.splitwise.SplitwiseGroup
+import com.mochimoney.app.data.splitwise.SplitwiseUser
 import com.mochimoney.app.domain.model.DefaultCategoryIds
+import com.mochimoney.app.domain.model.DedupeKeyGenerator
 import com.mochimoney.app.domain.model.TransactionCategory
+import com.mochimoney.app.domain.model.UpiTransaction
 import com.mochimoney.app.domain.repository.CategoryRepository
 import com.mochimoney.app.domain.repository.UpiTransactionRepository
 import com.mochimoney.app.sms.SmsInboxReader
@@ -44,6 +49,10 @@ class AppContainer(context: Context) {
         SmsInboxReader(appContext)
     }
 
+    private val splitwiseApiClient: SplitwiseApiClient by lazy {
+        SplitwiseApiClient()
+    }
+
     fun refreshFromSmsInbox(limit: Int = 500): Int {
         val pattern = preferences.senderPattern
             .trim()
@@ -79,6 +88,77 @@ class AppContainer(context: Context) {
 
         transactionRepository.upsert(transaction)
         return 1
+    }
+
+    fun connectSplitwise(apiKey: String): SplitwiseConnection {
+        val cleanKey = apiKey.trim()
+        if (cleanKey.isBlank()) error("Splitwise API key is required.")
+
+        val user = splitwiseApiClient.getCurrentUser(cleanKey)
+        val groups = splitwiseApiClient.getGroups(cleanKey)
+        preferences.splitwiseApiKey = cleanKey
+        preferences.splitwiseEnabled = true
+        preferences.splitwiseCurrentUserId = user.id
+        preferences.splitwiseCurrentUserName = user.name
+        preferences.splitwiseGroups = groups
+
+        val groupIds = groups.map { it.id }.toSet()
+        preferences.splitwiseSelectedGroupIds = preferences.splitwiseSelectedGroupIds.intersect(groupIds)
+
+        return SplitwiseConnection(user = user, groups = groups)
+    }
+
+    fun setSplitwiseEnabled(enabled: Boolean) {
+        preferences.splitwiseEnabled = enabled
+    }
+
+    fun setSplitwiseGroupSelected(groupId: Long, selected: Boolean) {
+        val updated = if (selected) {
+            preferences.splitwiseSelectedGroupIds + groupId
+        } else {
+            preferences.splitwiseSelectedGroupIds - groupId
+        }
+        preferences.splitwiseSelectedGroupIds = updated
+    }
+
+    fun refreshFromSplitwise(): Int {
+        if (!preferences.splitwiseEnabled) return 0
+        val apiKey = preferences.splitwiseApiKey.takeIf { it.isNotBlank() } ?: return 0
+        val currentUserId = preferences.splitwiseCurrentUserId.takeIf { it > 0L } ?: return 0
+        val groupsById = preferences.splitwiseGroups.associateBy { it.id }
+        val selectedGroups = preferences.splitwiseSelectedGroupIds.mapNotNull(groupsById::get)
+        if (selectedGroups.isEmpty()) return 0
+
+        val existingKeys = transactionRepository.getAll().map { it.dedupeKey }.toSet()
+        val transactions = selectedGroups
+            .flatMap { group ->
+                splitwiseApiClient.getExpenseShares(
+                    apiKey = apiKey,
+                    currentUserId = currentUserId,
+                    group = group,
+                )
+            }
+            .map { share ->
+                UpiTransaction(
+                    dedupeKey = DedupeKeyGenerator.sha256("splitwise|${share.expenseId}|$currentUserId").take(32),
+                    direction = share.direction,
+                    amountPaise = share.amountPaise,
+                    currency = share.currency,
+                    occurredOn = share.date,
+                    counterparty = share.groupName,
+                    referenceNumber = "splitwise:${share.expenseId}",
+                    accountSuffix = null,
+                    sender = "Splitwise",
+                    smsBodyHash = DedupeKeyGenerator.sha256("splitwise:${share.expenseId}"),
+                    smsBody = "${share.description}\nGroup: ${share.groupName}",
+                    smsReceivedAtMillis = null,
+                    categoryId = DefaultCategoryIds.SPLITWISE,
+                )
+            }
+
+        val newCount = transactions.count { it.dedupeKey !in existingKeys }
+        transactionRepository.upsertAll(transactions)
+        return newCount
     }
 
     fun applyCategoryRule(transactionId: Long, counterparty: String?, categoryId: String) {
@@ -145,3 +225,8 @@ class AppContainer(context: Context) {
             .filter { it.isNotBlank() }
             .toSet()
 }
+
+data class SplitwiseConnection(
+    val user: SplitwiseUser,
+    val groups: List<SplitwiseGroup>,
+)

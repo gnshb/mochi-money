@@ -66,7 +66,7 @@ fun CategorizationScreen(
         it.categoryId == null || it.categoryId == DefaultCategoryIds.UNCATEGORIZED
     }
     val pickableCategories = state.categories.filterNot {
-        it.id == DefaultCategoryIds.UNCATEGORIZED
+        it.id in InternalCategoryIds
     }
 
     com.mochimoney.app.ui.components.DismissFocusBox(modifier = modifier.fillMaxSize()) {
@@ -198,7 +198,7 @@ private fun categoryRulesItems(
     actions: MochiMoneyActions,
 ) {
     val editableCategories = state.categories
-        .filterNot { it.id == DefaultCategoryIds.UNCATEGORIZED }
+        .filterNot { it.id in InternalCategoryIds }
         .sortedBy { if (it.id == DefaultCategoryIds.OTHER) 1 else 0 }
     scope.item(key = "rules-section") {
         SectionTitle("Categories and keywords")
@@ -227,6 +227,11 @@ private fun KeywordHelpCard() {
         }
     }
 }
+
+private val InternalCategoryIds = setOf(
+    DefaultCategoryIds.UNCATEGORIZED,
+    DefaultCategoryIds.SPLITWISE,
+)
 
 @Composable
 private fun NewCategoryCard(actions: MochiMoneyActions) {

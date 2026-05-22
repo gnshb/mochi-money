@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.mochimoney.app.data.AppPreferences
+import com.mochimoney.app.data.splitwise.SplitwiseGroup
 import com.mochimoney.app.domain.model.DefaultCategoryIds
 import com.mochimoney.app.domain.model.TransactionCategory
 import com.mochimoney.app.domain.model.TransactionDirection
@@ -87,6 +89,9 @@ fun MochiMoneyRoot(
         onToggleBudgetAlerts = {
             state = state.copy(settings = state.settings.copy(budgetAlerts = it))
         },
+        onToggleSplitwise = {
+            state = state.copy(settings = state.settings.copy(splitwise = state.settings.splitwise.copy(enabled = it)))
+        },
     )
 
     MochiMoneyTheme {
@@ -111,6 +116,10 @@ fun MochiMoneyApp(
                     Manifest.permission.READ_SMS,
                 ) == PackageManager.PERMISSION_GRANTED,
                 senderPattern = container.preferences.senderPattern,
+                monthlyBudget = container.preferences.monthlyBudgetPaise,
+                settings = SettingsUi(
+                    splitwise = container.preferences.toSplitwiseSettingsUi(),
+                ),
             ),
         )
     }
@@ -129,6 +138,8 @@ fun MochiMoneyApp(
             } else {
                 0
             }
+            val splitwiseResult = runCatching { container.refreshFromSplitwise() }
+            val splitwiseImported = splitwiseResult.getOrDefault(0)
             loadStateFromRepositories(
                 categories = container.categoryRepository.getCategories(),
                 transactions = container.transactionRepository.getAll(),
@@ -136,11 +147,13 @@ fun MochiMoneyApp(
                 previousState = state,
             ).copy(
                 isRefreshing = false,
-                scanStatus = if (state.smsPermissionGranted) {
-                    "Scan complete. $imported new matching SMS found."
-                } else {
-                    state.scanStatus
+                scanStatus = when {
+                    splitwiseResult.isFailure -> "Splitwise sync failed: ${splitwiseResult.exceptionOrNull().userFacingMessage()}"
+                    state.smsPermissionGranted -> "Scan complete. $imported new matching SMS and $splitwiseImported Splitwise expenses imported."
+                    splitwiseImported > 0 -> "Splitwise sync complete. $splitwiseImported new expenses imported."
+                    else -> state.scanStatus
                 },
+                settings = state.settings.copy(splitwise = container.preferences.toSplitwiseSettingsUi()),
             )
         }
         // Hold the refreshing state for at least 1.2s so the mochi pulse is visible
@@ -155,7 +168,8 @@ fun MochiMoneyApp(
     LaunchedEffect(state.scanStatus) {
         val status = state.scanStatus ?: return@LaunchedEffect
         if (status.startsWith("Scan complete") || status.startsWith("Saved") ||
-            status.startsWith("Applied") || status.startsWith("Monthly budget")
+            status.startsWith("Applied") || status.startsWith("Monthly budget") ||
+            status.startsWith("Splitwise") || status.startsWith("Connected")
         ) {
             kotlinx.coroutines.delay(2500)
             if (state.scanStatus == status) {
@@ -255,6 +269,67 @@ fun MochiMoneyApp(
         },
         onToggleBudgetAlerts = {
             state = state.copy(settings = state.settings.copy(budgetAlerts = it))
+        },
+        onToggleSplitwise = { enabled ->
+            container.setSplitwiseEnabled(enabled)
+            state = state.copy(
+                settings = state.settings.copy(
+                    splitwise = container.preferences.toSplitwiseSettingsUi(),
+                ),
+                scanStatus = if (enabled) "Splitwise enabled." else "Splitwise disabled.",
+            )
+        },
+        onConnectSplitwise = { apiKey ->
+            state = state.copy(scanStatus = "Connecting Splitwise...")
+            coroutineScope.launch(Dispatchers.IO) {
+                val keyToUse = apiKey.ifBlank { container.preferences.splitwiseApiKey }
+                val result = runCatching { container.connectSplitwise(keyToUse) }
+                withContext(Dispatchers.Main) {
+                    state = if (result.isSuccess) {
+                        val connection = result.getOrThrow()
+                        state.copy(
+                            settings = state.settings.copy(
+                                splitwise = container.preferences.toSplitwiseSettingsUi(),
+                            ),
+                            scanStatus = "Connected Splitwise as ${connection.user.name}. Select groups to sync.",
+                        )
+                    } else {
+                        state.copy(scanStatus = "Splitwise connection failed: ${result.exceptionOrNull().userFacingMessage()}")
+                    }
+                }
+            }
+        },
+        onSelectSplitwiseGroup = { groupId, selected ->
+            container.setSplitwiseGroupSelected(groupId, selected)
+            state = state.copy(
+                settings = state.settings.copy(
+                    splitwise = container.preferences.toSplitwiseSettingsUi(),
+                ),
+            )
+        },
+        onSyncSplitwise = {
+            state = state.copy(isRefreshing = true, scanStatus = "Syncing Splitwise...")
+            coroutineScope.launch(Dispatchers.IO) {
+                val result = runCatching { container.refreshFromSplitwise() }
+                val categories = container.categoryRepository.getCategories()
+                val transactions = container.transactionRepository.getAll()
+                withContext(Dispatchers.Main) {
+                    state = loadStateFromRepositories(
+                        categories = categories,
+                        transactions = transactions,
+                        monthlyBudget = container.preferences.monthlyBudgetPaise,
+                        previousState = state,
+                    ).copy(
+                        isRefreshing = false,
+                        settings = state.settings.copy(splitwise = container.preferences.toSplitwiseSettingsUi()),
+                        scanStatus = if (result.isSuccess) {
+                            "Splitwise sync complete. ${result.getOrThrow()} new expenses imported."
+                        } else {
+                            "Splitwise sync failed: ${result.exceptionOrNull().userFacingMessage()}"
+                        },
+                    )
+                }
+            }
         },
     )
 
@@ -515,3 +590,18 @@ private fun estimatedBudgetFor(categoryId: String): Long? = when (categoryId) {
     DefaultCategoryIds.TRANSFERS -> 300_000L
     else -> null
 }
+
+private fun AppPreferences.toSplitwiseSettingsUi(): SplitwiseSettingsUi =
+    SplitwiseSettingsUi(
+        enabled = splitwiseEnabled,
+        apiKeyConfigured = splitwiseApiKey.isNotBlank(),
+        currentUserLabel = splitwiseCurrentUserName,
+        groups = splitwiseGroups.map { it.toUi() },
+        selectedGroupIds = splitwiseSelectedGroupIds,
+    )
+
+private fun SplitwiseGroup.toUi(): SplitwiseGroupUi =
+    SplitwiseGroupUi(id = id, name = name)
+
+private fun Throwable?.userFacingMessage(): String =
+    this?.message?.takeIf { it.isNotBlank() } ?: "Unknown error."

@@ -133,9 +133,6 @@ private fun TransactionsList(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            SectionTitle("Transactions")
-        }
-        item {
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
