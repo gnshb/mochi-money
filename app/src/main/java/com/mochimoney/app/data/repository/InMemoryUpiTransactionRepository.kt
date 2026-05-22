@@ -30,8 +30,20 @@ class InMemoryUpiTransactionRepository : UpiTransactionRepository {
     }
 
     @Synchronized
+    override fun findBySmsBodyHash(smsBodyHash: String): UpiTransaction? =
+        records.values.firstOrNull { it.smsBodyHash == smsBodyHash }
+
+    @Synchronized
     override fun getAll(): List<UpiTransaction> =
         records.values.sortedWith(compareByDescending<UpiTransaction> { it.occurredOn }.thenByDescending { it.id })
+
+    @Synchronized
+    override fun updateParsedFields(transaction: UpiTransaction) {
+        val current = records[transaction.id] ?: return
+        dedupeIndex.remove(current.dedupeKey)
+        records[transaction.id] = transaction
+        dedupeIndex[transaction.dedupeKey] = transaction.id
+    }
 
     @Synchronized
     override fun updateCategory(id: Long, categoryId: String) {

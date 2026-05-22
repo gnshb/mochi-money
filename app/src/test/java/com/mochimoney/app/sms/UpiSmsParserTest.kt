@@ -126,6 +126,51 @@ class UpiSmsParserTest {
     }
 
     @Test
+    fun parsesLinkedAccountSbinVpaCounterparty() {
+        val body = "Your A/c No.XXXX2601 is debited with Rs.50.00 on 21-05-2026 07:35 AM and SBIN A/c linked to pandianthangaraj64@oksbi is credited (UPI Ref No.073552107662).Current AVBL bal is Rs.347038.82 - TMB"
+
+        val result = parser.parse(RawSms(body = body, sender = "TM-BANK"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(5_000L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 21), transaction.occurredOn)
+        assertEquals("pandianthangaraj64@oksbi", transaction.counterparty)
+        assertEquals("073552107662", transaction.referenceNumber)
+    }
+
+    @Test
+    fun parsesGenericMerchantSpendAtCounterparty() {
+        val body = "Rs.75.00 spent at Fresh Mart via UPI Ref no 998877665544 on 22-05-2026. Avl Bal Rs.1200.00"
+
+        val result = parser.parse(RawSms(body = body, sender = "BANK"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.DEBIT, transaction.direction)
+        assertEquals(7_500L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 22), transaction.occurredOn)
+        assertEquals("Fresh Mart", transaction.counterparty)
+        assertEquals("998877665544", transaction.referenceNumber)
+    }
+
+    @Test
+    fun parsesIncomingPayerCounterparty() {
+        val body = "A/c XX2601 credited with Rs.500.00 from Ravi Kumar via UPI Ref No 112233445566 on 22-05-2026. Avl Bal Rs.1500.00"
+
+        val result = parser.parse(RawSms(body = body, sender = "BANK"))
+
+        assertTrue(result is SmsParseResult.Parsed)
+        val transaction = (result as SmsParseResult.Parsed).transaction
+        assertEquals(TransactionDirection.CREDIT, transaction.direction)
+        assertEquals(50_000L, transaction.amountPaise)
+        assertEquals(LocalDate.of(2026, 5, 22), transaction.occurredOn)
+        assertEquals("Ravi Kumar", transaction.counterparty)
+        assertEquals("112233445566", transaction.referenceNumber)
+    }
+
+    @Test
     fun ignoresOtpMessages() {
         val result = parser.parse(RawSms(body = "123456 is your UPI OTP. Do not share it."))
 

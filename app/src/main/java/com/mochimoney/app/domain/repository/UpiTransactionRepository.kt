@@ -10,7 +10,11 @@ interface UpiTransactionRepository {
 
     fun findByDedupeKey(dedupeKey: String): UpiTransaction?
 
+    fun findBySmsBodyHash(smsBodyHash: String): UpiTransaction? = null
+
     fun getAll(): List<UpiTransaction>
+
+    fun updateParsedFields(transaction: UpiTransaction)
 
     fun updateCategory(id: Long, categoryId: String)
 

@@ -23,8 +23,29 @@ class RoomUpiTransactionRepository(
     override fun findByDedupeKey(dedupeKey: String): UpiTransaction? =
         dao.findByDedupeKey(dedupeKey)?.toDomain()
 
+    override fun findBySmsBodyHash(smsBodyHash: String): UpiTransaction? =
+        dao.findBySmsBodyHash(smsBodyHash)?.toDomain()
+
     override fun getAll(): List<UpiTransaction> =
         dao.getAll().map { it.toDomain() }
+
+    override fun updateParsedFields(transaction: UpiTransaction) {
+        dao.updateParsedFields(
+            id = transaction.id,
+            dedupeKey = transaction.dedupeKey,
+            direction = transaction.direction.name,
+            amountPaise = transaction.amountPaise,
+            currency = transaction.currency,
+            occurredOn = transaction.occurredOn.toString(),
+            counterparty = transaction.counterparty,
+            referenceNumber = transaction.referenceNumber,
+            accountSuffix = transaction.accountSuffix,
+            sender = transaction.sender,
+            smsBody = transaction.smsBody,
+            smsReceivedAtMillis = transaction.smsReceivedAtMillis,
+            categoryId = transaction.categoryId,
+        )
+    }
 
     override fun updateCategory(id: Long, categoryId: String) {
         dao.updateCategory(id, categoryId)

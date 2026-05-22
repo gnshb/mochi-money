@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.mochimoney.app.data.local.MochiMoneyDatabase
 import com.mochimoney.app.data.repository.ExistingTransactionCategoryRefresher
+import com.mochimoney.app.data.repository.ParsedSmsTransactionImporter
 import com.mochimoney.app.data.repository.RoomCategoryRepository
 import com.mochimoney.app.data.repository.RoomUpiTransactionRepository
 import com.mochimoney.app.data.splitwise.SplitwiseApiClient
@@ -75,10 +76,10 @@ class AppContainer(context: Context) {
             (parser.parse(rawSms) as? SmsParseResult.Parsed)?.transaction
         }
 
-        val existingKeys = transactionRepository.getAll().map { it.dedupeKey }.toSet()
-        val newCount = transactions.count { it.dedupeKey !in existingKeys }
-        transactionRepository.upsertAll(transactions)
-        return newCount
+        return ParsedSmsTransactionImporter.import(
+            transactions = transactions,
+            repository = transactionRepository,
+        )
     }
 
     fun refreshFromSampleSms(body: String): Int {
@@ -215,6 +216,7 @@ class AppContainer(context: Context) {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .toSet()
+
 }
 
 data class SplitwiseConnection(

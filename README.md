@@ -28,6 +28,11 @@ cd mochi-money
 
 ## Changelog
 
+### v0.2.4
+
+- Improved SMS parsing for broader UPI, linked-account, credit-card, merchant, and payer formats.
+- Repaired stale SMS imports when parser improvements identify a better direction, counterparty, or category.
+
 ### v0.2.3
 
 - Fixed counterparty parsing for ICICI-style credited merchant SMS and TMB linked-account/credit-card UPI messages.

@@ -139,21 +139,79 @@ class UpiSmsParser(
             ?.takeIf { it.isNotBlank() }
 
     private fun String.extractCounterparty(direction: TransactionDirection): String? {
-        val patterns = when (direction) {
+        val explicitPatterns = when (direction) {
             TransactionDirection.DEBIT -> debitCounterpartyPatterns
             TransactionDirection.CREDIT -> creditCounterpartyPatterns
         }
-
-        return patterns.firstNotNullOfOrNull { pattern ->
-            pattern.find(this)?.groupValues?.get(1)?.cleanCounterparty()
+        val genericPatterns = when (direction) {
+            TransactionDirection.DEBIT -> genericDebitCounterpartyPatterns
+            TransactionDirection.CREDIT -> genericCreditCounterpartyPatterns
         }
+
+        val candidates = buildList {
+            explicitPatterns.forEach { pattern ->
+                pattern.find(this@extractCounterparty)?.groupValues?.get(1)?.let { raw ->
+                    add(CounterpartyCandidate(raw = raw, score = 100))
+                }
+            }
+            directionalVpaPatterns(direction).forEach { pattern ->
+                pattern.find(this@extractCounterparty)?.groupValues?.get(1)?.let { raw ->
+                    add(CounterpartyCandidate(raw = raw, score = 90))
+                }
+            }
+            genericPatterns.forEach { pattern ->
+                pattern.find(this@extractCounterparty)?.groupValues?.get(1)?.let { raw ->
+                    add(CounterpartyCandidate(raw = raw, score = 75))
+                }
+            }
+            vpaPattern.findAll(this@extractCounterparty).forEach { match ->
+                add(CounterpartyCandidate(raw = match.groupValues[1], score = 65))
+            }
+        }
+
+        return candidates
+            .mapNotNull { candidate ->
+                candidate.raw.cleanCounterparty()?.let { cleaned -> candidate.copy(raw = cleaned) }
+            }
+            .filter { it.raw.isPlausibleCounterparty() }
+            .distinctBy { it.raw.lowercase(Locale.ROOT) }
+            .sortedWith(
+                compareByDescending<CounterpartyCandidate> { it.score }
+                    .thenByDescending { it.raw.hasVpaShape() }
+                    .thenByDescending { it.raw.length }
+            )
+            .firstOrNull()
+            ?.raw
     }
 
     private fun String.cleanCounterparty(): String? =
         trim()
             .trim('-', ':', ',', '.', ';')
+            .replace(Regex("(?i)^(?:[A-Z]{3,5}\\s+)?(?:A/?C|Acct|Account)\\s+linked\\s+to\\s+"), "")
+            .replace(Regex("(?i)^(?:VPA|UPI\\s+ID|merchant|payee|payer|remitter)\\s*[:\\-]?\\s*"), "")
+            .replace(Regex("(?i)^name\\s*[:\\-]?\\s*"), "")
+            .replace(Regex("(?i)\\s+is\\s+(?:debited|credited)\\b.*$"), "")
+            .replace(Regex("(?i)\\s+(?:has\\s+been\\s+)?(?:used|paid|spent|debited|credited)\\b.*$"), "")
+            .replace(Regex("(?i)\\s+with\\s+ref(?:erence)?\\b.*$"), "")
+            .replace(Regex("(?i)\\s+(?:UPI\\s*)?Ref(?:erence)?\\b.*$"), "")
+            .replace(Regex("(?i)\\s+(?:RRN|UTR|Txn|Transaction)\\b.*$"), "")
+            .replace(Regex("(?i)\\s+(?:Current|Available|Avl)\\b.*$"), "")
+            .replace(Regex("(?i)\\s+(?:via|through|using)\\s+UPI\\b.*$"), "")
+            .trim('(', ')', '[', ']', '-', ':', ',', '.', ';')
             .replace(Regex("\\s+"), " ")
             .takeIf { it.isNotBlank() }
+
+    private fun String.isPlausibleCounterparty(): Boolean {
+        val lower = lowercase(Locale.ROOT)
+        if (length < 2) return false
+        if (Regex("^[0-9.,\\s]+$").matches(this)) return false
+        if (lower in counterpartyNoiseWords) return false
+        if (counterpartyNoisePrefixes.any { lower.startsWith(it) }) return false
+        return true
+    }
+
+    private fun String.hasVpaShape(): Boolean =
+        vpaPattern.matches(this)
 
     private fun Long.toLocalDate(zoneId: ZoneId): LocalDate =
         Instant.ofEpochMilli(this).atZone(zoneId).toLocalDate()
@@ -173,6 +231,11 @@ class UpiSmsParser(
     }
 
     private companion object {
+        private data class CounterpartyCandidate(
+            val raw: String,
+            val score: Int,
+        )
+
         val otpPattern = Regex("\\b(?:otp|one\\s*time\\s*password|verification\\s*code)\\b", RegexOption.IGNORE_CASE)
         val debitWords = listOf(
             "debited", "debit", "paid", "sent", "spent", "transferred", "withdrawn",
@@ -180,7 +243,7 @@ class UpiSmsParser(
             "used for", "has been used",
         )
         val creditWords = listOf(
-            "credited", "credit", "received", "deposited", "added to", "refund",
+            "credited", "received", "deposited", "added to", "refund",
             "reversed", "refunded",
         )
 
@@ -206,16 +269,21 @@ class UpiSmsParser(
             "\\b([0-3]?\\d)[/-]([0-1]?\\d|[A-Za-z]{3,9})[/-]([0-9]{2,4})\\b"
         )
         val referencePattern = Regex(
-            "(?i)\\b(?:upi\\s*)?(?:reference\\s+number\\s+(?:is\\s+)?|ref(?:erence)?\\s*(?:no\\.?|num|number|id)?|refno|rrn|utr|txn(?:\\s*(?:id|no))?|transaction\\s*(?:id|no))[:\\-\\s#]*([a-z0-9]{6,})\\b"
+            "(?i)\\b(?:upi\\s*)?(?:reference\\s+number\\s+(?:is\\s+)?|ref(?:erence)?\\s*(?:no\\.?|num|number|id)?\\s*(?:is\\s+)?|refno|rrn|utr|txn(?:\\s*(?:id|no))?|transaction\\s*(?:id|no))[:\\-\\s#]*([a-z0-9]{6,})\\b"
         )
         val accountPattern = Regex("(?i)\\b(?:A/?[Cc]|Acct|Account)\\.?\\s*(?:no\\.?\\s*)?[xX*]*(\\d{3,6})\\b")
+        val vpaPattern = Regex("(?i)\\b([a-z0-9][a-z0-9._-]{1,}@[a-z0-9][a-z0-9._-]{1,})\\b")
 
-        private const val STOP = "(?=\\s+(?:Refno|Ref\\b|Ref\\.|Ref:|UPI|RRN|UTR|If\\s+not|on\\s+date|on\\s+\\d|dated|via|through|using|info|info:|Avl|Available|Bal|Balance|-[A-Z]{2,5}\\b|\\.|,)|$)"
+        private const val STOP = "(?=\\s+(?:is\\s+(?:debited|credited)\\b|has\\s+been\\s+(?:used|paid|spent)\\b|Refno|Ref\\b|Ref\\.|Ref:|Reference|UPI|RRN|UTR|Txn|Transaction|If\\s+not|on\\s+date|on\\s+\\d|dated|via|through|using|info|info:|Current|Avl|AVBL|Available|Bal|Balance|Limit|-[A-Z]{2,5}\\b|\\.|,)|[).,;]|$)"
 
         val debitCounterpartyPatterns = listOf(
             Regex("(?i)\\blinked\\s+to\\s+(.+?)\\s+is\\s+credited\\b"),
+            Regex("(?i)\\bcredited\\s+to\\s+(.+?)$STOP"),
+            Regex("(?i)\\bpayee\\s*(?:name|id)?\\s*[:\\-]\\s+(.+?)$STOP"),
             Regex("(?i)\\bcard\\s+at\\s+(.+?)\\s+has\\s+been\\s+used\\b"),
             Regex("(?i)\\bat\\s+(.+?)\\s+has\\s+been\\s+used\\b"),
+            Regex("(?i)\\b(?:used|spent|paid|purchase(?:d)?)\\s+(?:at|with|to)\\s+(.+?)$STOP"),
+            Regex("(?i)\\b(?:purchase|payment|txn|transaction)\\s+(?:made\\s+)?(?:at|to|with)\\s+(.+?)$STOP"),
             Regex("(?i)\\b(?:trf|transfer(?:red)?)\\s+to\\s+(.+?)$STOP"),
             Regex("(?i)\\b(?:paid|sent|payment)\\s+to\\s+(.+?)$STOP"),
             Regex("(?i)\\bto\\s+VPA\\s+(.+?)$STOP"),
@@ -226,10 +294,42 @@ class UpiSmsParser(
         )
         val creditCounterpartyPatterns = listOf(
             Regex("(?i)\\bfrom\\s+VPA\\s+(.+?)$STOP"),
+            Regex("(?i)\\b(?:received|credited)\\s+(?:from|by)\\s+(.+?)$STOP"),
+            Regex("(?i)\\b(?:payer|sender|remitter)\\s*(?:name)?\\s*[:\\-]?\\s+(.+?)$STOP"),
             Regex("(?i)\\bfrom\\s+(.+?)$STOP"),
             Regex("(?i)\\bby\\s+(.+?)$STOP"),
             Regex("(?i)\\bcredited\\s+(?:by|with)\\s+\\S+\\s+from\\s+(.+?)$STOP")
         )
+        val genericDebitCounterpartyPatterns = listOf(
+            Regex("(?i)\\b(?:to|towards|for)\\s+([A-Z0-9][A-Z0-9 ._@&'/-]{2,}?)$STOP"),
+            Regex("(?i)\\b(?:at|with)\\s+([A-Z0-9][A-Z0-9 ._@&'/-]{2,}?)$STOP"),
+            Regex("(?i)\\b(?:merchant|payee)\\s*(?:name|id)?\\s*[:\\-]\\s+(.+?)$STOP"),
+        )
+        val genericCreditCounterpartyPatterns = listOf(
+            Regex("(?i)\\b(?:from|by)\\s+([A-Z0-9][A-Z0-9 ._@&'/-]{2,}?)$STOP"),
+            Regex("(?i)\\b(?:payer|sender|remitter)\\s*(?:name|id)?\\s*[:\\-]?\\s+(.+?)$STOP"),
+        )
+        val debitVpaCounterpartyPatterns = listOf(
+            Regex("(?i)\\b(?:to|linked\\s+to|credited\\s+to)\\s+([a-z0-9][a-z0-9._-]{1,}@[a-z0-9][a-z0-9._-]{1,})\\b"),
+            Regex("(?i)\\bpayee\\s*(?:vpa|upi\\s+id)?\\s*[:\\-]\\s+([a-z0-9][a-z0-9._-]{1,}@[a-z0-9][a-z0-9._-]{1,})\\b"),
+        )
+        val creditVpaCounterpartyPatterns = listOf(
+            Regex("(?i)\\b(?:from|by|payer\\s*(?:vpa|upi\\s+id)?\\s*[:\\-]?|sender\\s*(?:vpa|upi\\s+id)?\\s*[:\\-]?)\\s+([a-z0-9][a-z0-9._-]{1,}@[a-z0-9][a-z0-9._-]{1,})\\b"),
+        )
+        val counterpartyNoiseWords = setOf(
+            "upi", "imps", "neft", "rtgs", "bhim", "vpa", "account", "acct", "a/c",
+            "rs", "inr", "transaction", "txn", "payment", "debit", "credit",
+        )
+        val counterpartyNoisePrefixes = listOf(
+            "your a/c", "your account", "a/c no", "acct no", "account no",
+            "if not", "available", "current", "avbl", "balance",
+        )
+
+        fun directionalVpaPatterns(direction: TransactionDirection): List<Regex> =
+            when (direction) {
+                TransactionDirection.DEBIT -> debitVpaCounterpartyPatterns
+                TransactionDirection.CREDIT -> creditVpaCounterpartyPatterns
+            }
 
         val monthAliases = mapOf(
             "jan" to Month.JANUARY,
