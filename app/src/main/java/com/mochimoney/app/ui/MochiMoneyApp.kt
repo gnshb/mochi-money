@@ -43,9 +43,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.text.withStyle
+import com.mochimoney.app.data.AppContainer
 import com.mochimoney.app.data.AppPreferences
+import com.mochimoney.app.data.llm.LlmModelCatalog
 import com.mochimoney.app.data.splitwise.SplitwiseGroup
 import com.mochimoney.app.domain.model.DefaultCategoryIds
+import com.mochimoney.app.domain.model.LlmBackend
+import com.mochimoney.app.domain.model.LlmModelStatus
 import com.mochimoney.app.domain.model.TransactionCategory
 import com.mochimoney.app.domain.model.TransactionDirection
 import com.mochimoney.app.domain.model.UpiTransaction
@@ -126,6 +131,7 @@ fun MochiMoneyApp(
                 monthlyBudget = container.preferences.monthlyBudgetPaise,
                 settings = SettingsUi(
                     splitwise = container.preferences.toSplitwiseSettingsUi(),
+                    llm = container.toLlmSettingsUi(),
                 ),
             ),
         )
@@ -135,6 +141,30 @@ fun MochiMoneyApp(
     ) { granted ->
         state = state.copy(smsPermissionGranted = granted)
         if (granted) refreshKey += 1
+    }
+
+    // Gemini Nano availability is transient (probed at runtime), so it lives outside the
+    // persisted prefs. currentLlmUi() rebuilds the LLM settings while preserving the probe result.
+    var geminiNanoStatus by remember { mutableStateOf(GeminiNanoStatusUi.Unknown) }
+    val currentLlmUi = { container.toLlmSettingsUi().copy(geminiNanoStatus = geminiNanoStatus) }
+    val probeGeminiNano: (Boolean) -> Unit = { commit ->
+        geminiNanoStatus = GeminiNanoStatusUi.Checking
+        state = state.copy(settings = state.settings.copy(llm = currentLlmUi()))
+        coroutineScope.launch(Dispatchers.IO) {
+            val available = runCatching { container.checkGeminiNano() }.getOrDefault(false)
+            if (commit && available) container.setLlmBackend(LlmBackend.GeminiNano)
+            withContext(Dispatchers.Main) {
+                geminiNanoStatus = if (available) GeminiNanoStatusUi.Available else GeminiNanoStatusUi.Unavailable
+                state = state.copy(
+                    settings = state.settings.copy(llm = currentLlmUi()),
+                    scanStatus = when {
+                        available && commit -> "Using Gemini Nano."
+                        available -> "Gemini Nano is ready on this device."
+                        else -> "Gemini Nano isn't available here (needs Google AICore access). Use a downloaded model instead."
+                    },
+                )
+            }
+        }
     }
 
     LaunchedEffect(container, refreshKey) {
@@ -160,7 +190,10 @@ fun MochiMoneyApp(
                     splitwiseImported > 0 -> "Splitwise sync complete. $splitwiseImported new expenses imported."
                     else -> state.scanStatus
                 },
-                settings = state.settings.copy(splitwise = container.preferences.toSplitwiseSettingsUi()),
+                settings = state.settings.copy(
+                    splitwise = container.preferences.toSplitwiseSettingsUi(),
+                    llm = currentLlmUi(),
+                ),
             )
         }
         // Hold the refreshing state briefly so the mochi pulse is visible
@@ -172,11 +205,23 @@ fun MochiMoneyApp(
         state = loadedState
     }
 
-    LaunchedEffect(state.scanStatus) {
+    LaunchedEffect(state.scanStatus, state.inferBusy) {
         val status = state.scanStatus ?: return@LaunchedEffect
+        if (state.inferBusy) return@LaunchedEffect // keep the popup pinned until detection finishes
         kotlinx.coroutines.delay(StatusVisibleMillis)
-        if (state.scanStatus == status) {
+        if (state.scanStatus == status && !state.inferBusy) {
             state = state.copy(scanStatus = null)
+        }
+    }
+
+    // When AI is enabled on a device that could support Gemini Nano, probe once so Settings can
+    // show a clear "available / not available" status instead of leaving the choice ambiguous.
+    LaunchedEffect(state.settings.llm.enabled, state.settings.llm.geminiNanoSupported) {
+        if (state.settings.llm.enabled &&
+            state.settings.llm.geminiNanoSupported &&
+            geminiNanoStatus == GeminiNanoStatusUi.Unknown
+        ) {
+            probeGeminiNano(false)
         }
     }
 
@@ -333,6 +378,167 @@ fun MochiMoneyApp(
                 }
             }
         },
+        onToggleLlm = { enabled ->
+            container.setLlmEnabled(enabled)
+            state = state.copy(
+                settings = state.settings.copy(llm = currentLlmUi()),
+                scanStatus = if (enabled) "LLM counterparty detection on." else "LLM counterparty detection off.",
+            )
+        },
+        onSelectLlmBackend = { backend ->
+            when (backend) {
+                LlmBackendUi.MediaPipe -> {
+                    container.setLlmBackend(LlmBackend.MediaPipe)
+                    state = state.copy(settings = state.settings.copy(llm = currentLlmUi()))
+                }
+                // AICore being present doesn't guarantee Nano can run; probe and commit if it works.
+                LlmBackendUi.GeminiNano -> probeGeminiNano(true)
+            }
+        },
+        onCheckGeminiNano = { probeGeminiNano(false) },
+        onSetHuggingFaceToken = { token ->
+            container.setHuggingFaceToken(token)
+            state = state.copy(
+                settings = state.settings.copy(llm = currentLlmUi()),
+                scanStatus = if (token.isBlank()) "Hugging Face token cleared." else "Hugging Face token saved.",
+            )
+        },
+        onActivateLlmModel = { modelId ->
+            container.setActiveLlmModel(modelId)
+            state = state.copy(settings = state.settings.copy(llm = currentLlmUi()))
+        },
+        onDeleteLlmModel = { modelId ->
+            LlmModelCatalog.byId(modelId)?.let { model ->
+                container.deleteLlmModel(model)
+                state = state.copy(
+                    settings = state.settings.copy(llm = currentLlmUi()),
+                    scanStatus = "Removed ${model.displayName}.",
+                )
+            }
+        },
+        onDownloadLlmModel = { modelId ->
+            LlmModelCatalog.byId(modelId)?.let { model ->
+                state = state.copy(settings = state.settings.copy(llm = state.settings.llm.withProgress(modelId, 0f)))
+                coroutineScope.launch(Dispatchers.IO) {
+                    val result = runCatching {
+                        container.downloadLlmModel(model) { progress ->
+                            coroutineScope.launch(Dispatchers.Main) {
+                                state = state.copy(
+                                    settings = state.settings.copy(llm = state.settings.llm.withProgress(modelId, progress)),
+                                )
+                            }
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        state = if (result.isSuccess) {
+                            state.copy(
+                                settings = state.settings.copy(llm = currentLlmUi()),
+                                scanStatus = "Downloaded ${model.displayName}.",
+                            )
+                        } else {
+                            // Surface failures in a manually-dismissed dialog (with any links intact).
+                            state.copy(
+                                settings = state.settings.copy(llm = currentLlmUi()),
+                                downloadError = "Couldn't download ${model.displayName}.\n\n${result.exceptionOrNull().userFacingMessage()}",
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        onInferCounterparty = { transactionId ->
+            val domainId = state.transactions.firstOrNull { it.id == transactionId }?.domainId
+            val reason = container.llmUnavailableReason()
+            when {
+                domainId == null -> state = state.copy(scanStatus = "Can't analyze this transaction.")
+                reason != null -> state = state.copy(scanStatus = reason)
+                else -> {
+                    state = state.copy(scanStatus = "Detecting counterparty…", inferBusy = true)
+                    coroutineScope.launch(Dispatchers.IO) {
+                        val result = runCatching { container.inferCounterparty(domainId) }
+                        val categories = container.categoryRepository.getCategories()
+                        val transactions = container.transactionRepository.getAll()
+                        withContext(Dispatchers.Main) {
+                            state = loadStateFromRepositories(
+                                categories = categories,
+                                transactions = transactions,
+                                monthlyBudget = container.preferences.monthlyBudgetPaise,
+                                previousState = state,
+                            ).copy(
+                                inferBusy = false,
+                                scanStatus = result.fold(
+                                    onSuccess = { r ->
+                                        if (r.changed) "Counterparty set to ${r.counterparty}." else "No clearer counterparty found."
+                                    },
+                                    onFailure = { "LLM detection failed: ${it.userFacingMessage()}" },
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        onInferAllCounterparties = {
+            val reason = container.llmUnavailableReason()
+            if (reason != null) {
+                state = state.copy(scanStatus = reason)
+            } else {
+                state = state.copy(scanStatus = "Running LLM on all transactions…", inferProgress = 0f, inferBusy = true)
+                coroutineScope.launch(Dispatchers.IO) {
+                    val result = runCatching {
+                        container.inferAllCounterparties { done, total ->
+                            val fraction = if (total > 0) done.toFloat() / total else 1f
+                            coroutineScope.launch(Dispatchers.Main) {
+                                state = state.copy(
+                                    inferProgress = fraction,
+                                    scanStatus = "Analyzing $done of $total…",
+                                )
+                            }
+                        }
+                    }
+                    val categories = container.categoryRepository.getCategories()
+                    val transactions = container.transactionRepository.getAll()
+                    withContext(Dispatchers.Main) {
+                        state = loadStateFromRepositories(
+                            categories = categories,
+                            transactions = transactions,
+                            monthlyBudget = container.preferences.monthlyBudgetPaise,
+                            previousState = state,
+                        ).copy(
+                            inferProgress = null,
+                            inferBusy = false,
+                            scanStatus = result.fold(
+                                onSuccess = { changed -> "LLM updated $changed transaction${if (changed == 1) "" else "s"}." },
+                                onFailure = { "LLM run failed: ${it.userFacingMessage()}" },
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        onRenameCounterparty = { transactionId, name ->
+            val domainId = state.transactions.firstOrNull { it.id == transactionId }?.domainId
+            if (domainId == null || name.isBlank()) {
+                state = state.copy(scanStatus = "Enter a name first.")
+            } else {
+                coroutineScope.launch(Dispatchers.IO) {
+                    val ok = runCatching { container.renameCounterparty(domainId, name) }.getOrDefault(false)
+                    val categories = container.categoryRepository.getCategories()
+                    val transactions = container.transactionRepository.getAll()
+                    withContext(Dispatchers.Main) {
+                        state = loadStateFromRepositories(
+                            categories = categories,
+                            transactions = transactions,
+                            monthlyBudget = container.preferences.monthlyBudgetPaise,
+                            previousState = state,
+                        ).copy(
+                            scanStatus = if (ok) "Renamed — saved for similar payments too." else "Couldn't rename.",
+                        )
+                    }
+                }
+            }
+        },
+        onDismissDownloadError = { state = state.copy(downloadError = null) },
     )
 
     MochiMoneyTheme {
@@ -359,6 +565,10 @@ fun MochiMoneyApp(
         return
     }
 
+    state.downloadError?.let { message ->
+        ErrorDialog(message = message, onDismiss = actions.onDismissDownloadError)
+    }
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val useRail = maxWidth >= 720.dp
         if (useRail) {
@@ -369,6 +579,111 @@ fun MochiMoneyApp(
     }
 }
 
+@Composable
+private fun SpendingHistoryDialog(state: MochiMoneyUiState, onDismiss: () -> Unit) {
+    val budget = state.monthlyBudget
+    val current = java.time.YearMonth.now()
+    val rows = (0..2).map { back ->
+        val ym = current.minusMonths(back.toLong())
+        val txns = state.transactions.filter {
+            it.occurredOn.year == ym.year && it.occurredOn.monthValue == ym.monthValue
+        }
+        val spent = txns.filterNot { it.isIncoming }.sumOf { it.amountPaise }
+        val received = txns.filter { it.isIncoming }.sumOf { it.amountPaise }
+        Triple(ym, spent, received)
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Last 3 months", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            androidx.compose.foundation.layout.Column(
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+            ) {
+                rows.forEach { (ym, spent, received) ->
+                    val label = ym.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) +
+                        " " + ym.year
+                    val pace = if (budget > 0) (spent.toFloat() / budget).coerceIn(0f, 1f) else 0f
+                    androidx.compose.foundation.layout.Column(
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                        ) {
+                            Text(label, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (budget > 0) {
+                                    "${com.mochimoney.app.ui.components.formatCurrency(spent)} / ${com.mochimoney.app.ui.components.formatCurrency(budget)}"
+                                } else {
+                                    com.mochimoney.app.ui.components.formatCurrency(spent)
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                        if (budget > 0) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { pace },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Text(
+                            "Received ${com.mochimoney.app.ui.components.formatCurrency(received)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+@Composable
+private fun ErrorDialog(message: String, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download failed", style = MaterialTheme.typography.titleLarge) },
+        text = { LinkifiedText(message) },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+/** Renders text with any http(s) URLs as clickable links. */
+@Composable
+private fun LinkifiedText(text: String) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val urlRegex = Regex("https?://\\S+")
+    val annotated = androidx.compose.ui.text.buildAnnotatedString {
+        var last = 0
+        urlRegex.findAll(text).forEach { match ->
+            append(text.substring(last, match.range.first))
+            val url = match.value.trimEnd('.', ',', ')', ';')
+            pushStringAnnotation(tag = "url", annotation = url)
+            withStyle(
+                androidx.compose.ui.text.SpanStyle(
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                ),
+            ) { append(url) }
+            pop()
+            last = match.range.first + url.length
+        }
+        if (last < text.length) append(text.substring(last))
+    }
+    androidx.compose.foundation.text.ClickableText(
+        text = annotated,
+        style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+    ) { offset ->
+        annotated.getStringAnnotations(tag = "url", start = offset, end = offset)
+            .firstOrNull()?.let { uriHandler.openUri(it.item) }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompactAppScaffold(
@@ -376,12 +691,22 @@ private fun CompactAppScaffold(
     actions: MochiMoneyActions,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MochiTab.Dashboard) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     val navigationActions = actions.copy(
         onOpenCategorization = { selectedTab = MochiTab.Categorize },
     )
+    if (showHistory) SpendingHistoryDialog(state = state, onDismiss = { showHistory = false })
 
     Scaffold(
-        topBar = { MochiTopBar(selectedTab) },
+        topBar = {
+            MochiTopBar(
+                tab = selectedTab,
+                showAiAction = selectedTab == MochiTab.Transactions && state.settings.llm.enabled,
+                onRunAi = actions.onInferAllCounterparties,
+                showHistoryAction = selectedTab == MochiTab.Transactions,
+                onHistory = { showHistory = true },
+            )
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -416,6 +741,8 @@ private fun CompactAppScaffold(
             )
             ScanStatusPopup(
                 message = state.scanStatus,
+                progress = state.inferProgress,
+                busy = state.inferBusy,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -431,12 +758,22 @@ private fun WideAppScaffold(
     actions: MochiMoneyActions,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MochiTab.Dashboard) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     val navigationActions = actions.copy(
         onOpenCategorization = { selectedTab = MochiTab.Categorize },
     )
+    if (showHistory) SpendingHistoryDialog(state = state, onDismiss = { showHistory = false })
 
     Scaffold(
-        topBar = { MochiTopBar(selectedTab) },
+        topBar = {
+            MochiTopBar(
+                tab = selectedTab,
+                showAiAction = selectedTab == MochiTab.Transactions && state.settings.llm.enabled,
+                onRunAi = actions.onInferAllCounterparties,
+                showHistoryAction = selectedTab == MochiTab.Transactions,
+                onHistory = { showHistory = true },
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         Row(
@@ -472,6 +809,8 @@ private fun WideAppScaffold(
                 )
                 ScanStatusPopup(
                     message = state.scanStatus,
+                    progress = state.inferProgress,
+                    busy = state.inferBusy,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -485,12 +824,14 @@ private fun WideAppScaffold(
 private fun ScanStatusPopup(
     message: String?,
     modifier: Modifier = Modifier,
+    progress: Float? = null,
+    busy: Boolean = false,
 ) {
     AnimatedVisibility(
-        visible = message != null,
+        visible = message != null || busy,
         modifier = modifier,
     ) {
-        if (message != null) {
+        if (message != null || busy) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -501,11 +842,23 @@ private fun ScanStatusPopup(
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
             ) {
-                Text(
-                    text = message,
+                androidx.compose.foundation.layout.Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                ) {
+                    if (message != null) Text(text = message, style = MaterialTheme.typography.bodyMedium)
+                    if (busy || progress != null) {
+                        androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 6.dp))
+                        if (progress != null) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            // Single detection has no determinate progress — show an indeterminate bar.
+                            androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
             }
         }
     }
@@ -513,13 +866,43 @@ private fun ScanStatusPopup(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MochiTopBar(tab: MochiTab) {
+private fun MochiTopBar(
+    tab: MochiTab,
+    showAiAction: Boolean = false,
+    onRunAi: () -> Unit = {},
+    showHistoryAction: Boolean = false,
+    onHistory: () -> Unit = {},
+) {
     TopAppBar(
         title = {
             Text(
                 text = tab.label,
                 style = MaterialTheme.typography.titleLarge,
             )
+        },
+        actions = {
+            if (showHistoryAction) {
+                androidx.compose.material3.IconButton(
+                    onClick = com.mochimoney.app.ui.components.rememberMochiHapticClick(onClick = onHistory),
+                ) {
+                    Icon(
+                        com.mochimoney.app.ui.components.MochiIcons.History,
+                        contentDescription = "Spending history",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (showAiAction) {
+                androidx.compose.material3.IconButton(
+                    onClick = com.mochimoney.app.ui.components.rememberMochiHapticClick(onClick = onRunAi),
+                ) {
+                    Icon(
+                        com.mochimoney.app.ui.components.MochiIcons.Ai,
+                        contentDescription = "Detect all counterparties with LLM",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
@@ -580,6 +963,7 @@ private fun loadStateFromRepositories(
     val zone = java.time.ZoneId.systemDefault()
     val uiTransactions = transactions.map { transaction ->
         val counterpartyLabel = transaction.counterparty?.takeIf { it.isNotBlank() }
+            ?.let { com.mochimoney.app.data.llm.titleCaseCounterparty(it) }
         val fallbackTitle = if (transaction.direction == TransactionDirection.CREDIT) "Received" else "Sent"
         val derivedTime = transaction.smsReceivedAtMillis
             ?.let { java.time.Instant.ofEpochMilli(it).atZone(zone) }
@@ -650,6 +1034,39 @@ private fun AppPreferences.toSplitwiseSettingsUi(): SplitwiseSettingsUi =
 
 private fun SplitwiseGroup.toUi(): SplitwiseGroupUi =
     SplitwiseGroupUi(id = id, name = name)
+
+private fun AppContainer.toLlmSettingsUi(): LlmSettingsUi =
+    LlmSettingsUi(
+        enabled = preferences.llmCounterpartyEnabled,
+        geminiNanoSupported = geminiNanoSupported(),
+        backend = when (preferences.llmBackend) {
+            LlmBackend.GeminiNano -> LlmBackendUi.GeminiNano
+            LlmBackend.MediaPipe -> LlmBackendUi.MediaPipe
+        },
+        models = llmModelStatuses().map { it.toUi() },
+        hfTokenConfigured = preferences.huggingFaceToken.isNotBlank(),
+    )
+
+private fun LlmModelStatus.toUi(): LlmModelUi =
+    LlmModelUi(
+        id = model.id,
+        displayName = model.displayName,
+        description = model.description,
+        sizeLabel = formatModelSize(model.approxSizeBytes),
+        license = model.license,
+        requiresLicenseAcceptance = model.requiresLicenseAcceptance,
+        isInstalled = isInstalled,
+        isActive = isActive,
+    )
+
+private fun formatModelSize(bytes: Long): String {
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) {
+        String.format(java.util.Locale.US, "%.1f GB", mb / 1024)
+    } else {
+        String.format(java.util.Locale.US, "%.0f MB", mb)
+    }
+}
 
 private fun Throwable?.userFacingMessage(): String =
     this?.message?.takeIf { it.isNotBlank() } ?: "Unknown error."

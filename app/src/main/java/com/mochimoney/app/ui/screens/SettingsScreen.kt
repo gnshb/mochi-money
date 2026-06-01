@@ -12,15 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +38,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mochimoney.app.ui.GeminiNanoStatusUi
+import com.mochimoney.app.ui.LlmBackendUi
+import com.mochimoney.app.ui.LlmModelUi
+import com.mochimoney.app.ui.LlmSettingsUi
 import com.mochimoney.app.ui.MochiMoneyActions
 import com.mochimoney.app.ui.MochiMoneyUiState
 import com.mochimoney.app.ui.components.CategoryIconBubble
@@ -67,16 +75,10 @@ private fun SettingsContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            PermissionCard(state = state, actions = actions)
-        }
-        item {
-            BudgetCard(state = state, actions = actions)
-        }
-        item {
-            SenderFilterCard(state = state, actions = actions)
-        }
-        item {
             SplitwiseCard(state = state, actions = actions)
+        }
+        item {
+            AiCounterpartyCard(state = state, actions = actions)
         }
         item {
             SettingsGroup {
@@ -93,6 +95,9 @@ private fun SettingsContent(
                     onCheckedChange = actions.onToggleBudgetAlerts,
                 )
             }
+        }
+        item {
+            PermissionCard(state = state, actions = actions)
         }
         item {
             DataAssumptionsCard()
@@ -364,6 +369,232 @@ private fun SplitwiseGroupRow(
 }
 
 @Composable
+private fun AiCounterpartyCard(
+    state: MochiMoneyUiState,
+    actions: MochiMoneyActions,
+) {
+    val llm = state.settings.llm
+    var showManage by rememberSaveable { mutableStateOf(false) }
+    val activeModel = llm.models.firstOrNull { it.isActive }
+    val usingNano = llm.backend == LlmBackendUi.GeminiNano && llm.geminiNanoStatus == GeminiNanoStatusUi.Available
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = MochiCardShape,
+    ) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                CategoryIconBubble(
+                    icon = MochiIcons.Ai,
+                    color = if (llm.enabled) MochiSky else MaterialTheme.colorScheme.outline,
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("LLM counterparty detection", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Detect who a payment was with, on-device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = llm.enabled, onCheckedChange = actions.onToggleLlm)
+            }
+
+            AnimatedVisibility(visible = llm.enabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        when {
+                            usingNano -> "Using Gemini Nano"
+                            activeModel != null -> "Using ${activeModel.displayName}"
+                            else -> "No model chosen yet"
+                        },
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = rememberMochiHapticClick { showManage = true }) { Text("Manage") }
+                }
+            }
+        }
+    }
+
+    if (showManage) {
+        LlmManageDialog(llm = llm, actions = actions, onDismiss = { showManage = false })
+    }
+}
+
+@Composable
+private fun LlmManageDialog(
+    llm: LlmSettingsUi,
+    actions: MochiMoneyActions,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("On-device LLM", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (llm.geminiNanoSupported) {
+                    Text("Engine", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val nanoStatus = when (llm.geminiNanoStatus) {
+                        GeminiNanoStatusUi.Checking -> "Checking…"
+                        GeminiNanoStatusUi.Available -> "✓ Ready on this device."
+                        GeminiNanoStatusUi.Unavailable -> "✕ Not available — needs AICore access."
+                        GeminiNanoStatusUi.Unknown -> "Tap Check to test."
+                    }
+                    val nanoColor = when (llm.geminiNanoStatus) {
+                        GeminiNanoStatusUi.Available -> MochiMint
+                        GeminiNanoStatusUi.Unavailable -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    BackendRow(
+                        title = "Gemini Nano",
+                        subtitle = nanoStatus,
+                        subtitleColor = nanoColor,
+                        selected = llm.backend == LlmBackendUi.GeminiNano,
+                        onSelect = { actions.onSelectLlmBackend(LlmBackendUi.GeminiNano) },
+                        trailing = {
+                            if (llm.geminiNanoStatus != GeminiNanoStatusUi.Checking) {
+                                TextButton(onClick = rememberMochiHapticClick(onClick = actions.onCheckGeminiNano)) { Text("Check") }
+                            }
+                        },
+                    )
+                    BackendRow(
+                        title = "Downloaded model",
+                        subtitle = "Pick one below.",
+                        selected = llm.backend == LlmBackendUi.MediaPipe,
+                        onSelect = { actions.onSelectLlmBackend(LlmBackendUi.MediaPipe) },
+                    )
+                }
+
+                Text("Models", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                llm.models.forEach { model ->
+                    LlmModelRow(
+                        model = model,
+                        backendSelectable = !llm.geminiNanoSupported || llm.backend == LlmBackendUi.MediaPipe,
+                        onDownload = { actions.onDownloadLlmModel(model.id) },
+                        onDelete = { actions.onDeleteLlmModel(model.id) },
+                        onActivate = { actions.onActivateLlmModel(model.id) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
+
+@Composable
+private fun BackendRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RadioButton(selected = selected, onClick = rememberMochiHapticClick(onClick = onSelect))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = subtitleColor,
+            )
+        }
+        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun LlmModelRow(
+    model: LlmModelUi,
+    backendSelectable: Boolean,
+    onDownload: () -> Unit,
+    onDelete: () -> Unit,
+    onActivate: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${model.displayName} · ${model.sizeLabel}",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    model.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (model.requiresLicenseAcceptance) {
+                    Text(
+                        "License: ${model.license} — may require accepting terms on the host before download.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (model.isActive) {
+                    Text(
+                        "Active model",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MochiMint,
+                    )
+                }
+            }
+        }
+
+        val progress = model.downloadProgress
+        when {
+            progress != null -> {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Downloading… ${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            model.isInstalled -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (backendSelectable && !model.isActive) {
+                    Button(onClick = rememberMochiHapticClick(onClick = onActivate)) { Text("Use") }
+                }
+                OutlinedButton(onClick = rememberMochiHapticClick(onClick = onDelete)) { Text("Remove") }
+            }
+            else -> Button(onClick = rememberMochiHapticClick(onClick = onDownload)) {
+                Text("Download")
+            }
+        }
+    }
+}
+
+@Composable
 private fun DataAssumptionsCard() {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     Card(
@@ -416,7 +647,7 @@ private fun PermissionCard(
                 color = if (state.smsPermissionGranted) MochiMint else MochiRose,
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("SMS permission", style = MaterialTheme.typography.titleLarge)
+                Text("SMS permission", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (state.smsPermissionGranted) {
                         "Ready to read your SMS inbox."

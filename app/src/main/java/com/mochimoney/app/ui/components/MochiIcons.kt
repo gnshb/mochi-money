@@ -297,6 +297,95 @@ object MochiIcons {
         }
     }
 
+    // Cute kawaii llama/alpaca head — our on-device LLM mascot. Round head, soft ears, big eyes.
+    // EvenOdd punches the eyes out as holes.
+    val Ai = icon("Ai") {
+        path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+            // Left ear (soft rounded)
+            moveTo(8.7f, 3.6f)
+            quadTo(10.2f, 4.2f, 10.3f, 7.4f)
+            quadTo(8.1f, 7.4f, 7.4f, 5.4f)
+            quadTo(7.2f, 3.6f, 8.7f, 3.6f)
+            close()
+            // Right ear
+            moveTo(15.3f, 3.6f)
+            quadTo(13.8f, 4.2f, 13.7f, 7.4f)
+            quadTo(15.9f, 7.4f, 16.6f, 5.4f)
+            quadTo(16.8f, 3.6f, 15.3f, 3.6f)
+            close()
+            // Round chubby head
+            moveTo(12f, 6.4f)
+            quadTo(18.2f, 6.4f, 18.2f, 13.2f)
+            quadTo(18.2f, 20.4f, 12f, 20.4f)
+            quadTo(5.8f, 20.4f, 5.8f, 13.2f)
+            quadTo(5.8f, 6.4f, 12f, 6.4f)
+            close()
+            // Left eye (big round)
+            moveTo(9.7f, 11.6f)
+            quadTo(11.1f, 11.6f, 11.1f, 13.4f)
+            quadTo(11.1f, 15.2f, 9.7f, 15.2f)
+            quadTo(8.3f, 15.2f, 8.3f, 13.4f)
+            quadTo(8.3f, 11.6f, 9.7f, 11.6f)
+            close()
+            // Right eye
+            moveTo(14.3f, 11.6f)
+            quadTo(15.7f, 11.6f, 15.7f, 13.4f)
+            quadTo(15.7f, 15.2f, 14.3f, 15.2f)
+            quadTo(12.9f, 15.2f, 12.9f, 13.4f)
+            quadTo(12.9f, 11.6f, 14.3f, 11.6f)
+            close()
+        }
+    }
+
+    // Clock — used for the spending history view.
+    val History = icon("History") {
+        path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+            moveTo(12f, 3f)
+            quadTo(21f, 3f, 21f, 12f)
+            quadTo(21f, 21f, 12f, 21f)
+            quadTo(3f, 21f, 3f, 12f)
+            quadTo(3f, 3f, 12f, 3f)
+            close()
+            // inner hole
+            moveTo(12f, 5.6f)
+            quadTo(5.6f, 5.6f, 5.6f, 12f)
+            quadTo(5.6f, 18.4f, 12f, 18.4f)
+            quadTo(18.4f, 18.4f, 18.4f, 12f)
+            quadTo(18.4f, 5.6f, 12f, 5.6f)
+            close()
+            // hands
+            moveTo(11f, 7f)
+            horizontalLineTo(12.6f)
+            verticalLineTo(12f)
+            horizontalLineTo(11f)
+            close()
+            moveTo(12f, 11.2f)
+            lineTo(16f, 13.5f)
+            lineTo(15.2f, 14.9f)
+            lineTo(11.2f, 12.6f)
+            close()
+        }
+    }
+
+    // Pencil — used for inline edit affordances.
+    val Edit = icon("Edit") {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(4f, 20f)
+            lineTo(4f, 16.5f)
+            lineTo(14.5f, 6f)
+            lineTo(18f, 9.5f)
+            lineTo(7.5f, 20f)
+            close()
+            moveTo(15.5f, 5f)
+            lineTo(17.5f, 3f)
+            quadTo(18.5f, 2f, 19.5f, 3f)
+            lineTo(21f, 4.5f)
+            quadTo(22f, 5.5f, 21f, 6.5f)
+            lineTo(19f, 8.5f)
+            close()
+        }
+    }
+
     val Other = icon("Other") {
         path(fill = SolidColor(Color.Black)) {
             moveTo(12f, 4f)

@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,7 +66,7 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { SpendingPieCard(state = state, onMochiTap = actions.onRefresh) }
-            item { AnalyticsBlock(state = state) }
+            item { AnalyticsBlock(state = state, actions = actions) }
             item { Spacer(Modifier.height(12.dp)) }
         }
     }
@@ -260,7 +261,12 @@ private fun CompactLegendRow(category: CategoryUi, total: Long) {
 }
 
 @Composable
-private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifier) {
+private fun AnalyticsBlock(
+    state: MochiMoneyUiState,
+    actions: MochiMoneyActions,
+    modifier: Modifier = Modifier,
+) {
+    var showBudgetDialog by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val spent = state.totalSpentThisMonth
     val incoming = state.incomingThisMonth
     val budget = state.monthlyBudget
@@ -320,9 +326,12 @@ private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifi
                     columns = cols,
                 )
             }
-            if (budget > 0) {
-                BudgetPaceRow(pace = pace, spent = spent, budget = budget)
-            }
+            BudgetPaceRow(
+                pace = pace,
+                spent = spent,
+                budget = budget,
+                onEdit = { showBudgetDialog = true },
+            )
             if (categoryNetItems.isNotEmpty()) {
                 CategoryNetList(items = categoryNetItems)
             }
@@ -335,6 +344,51 @@ private fun AnalyticsBlock(state: MochiMoneyUiState, modifier: Modifier = Modifi
             }
         }
     }
+
+    if (showBudgetDialog) {
+        BudgetEditDialog(
+            currentBudgetPaise = budget,
+            onDismiss = { showBudgetDialog = false },
+            onSave = { paise ->
+                actions.onSetMonthlyBudget(paise)
+                showBudgetDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun BudgetEditDialog(
+    currentBudgetPaise: Long,
+    onDismiss: () -> Unit,
+    onSave: (Long) -> Unit,
+) {
+    var text by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf((currentBudgetPaise / 100).takeIf { it > 0L }?.toString().orEmpty())
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Monthly budget", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.filter(Char::isDigit) },
+                singleLine = true,
+                label = { Text("Budget in INR") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                ),
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { onSave((text.toLongOrNull() ?: 0L) * 100L) },
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 private data class CategoryNetItem(
@@ -433,7 +487,7 @@ private fun AnalyticChip(item: AnalyticItem, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun BudgetPaceRow(pace: Float, spent: Long, budget: Long) {
+private fun BudgetPaceRow(pace: Float, spent: Long, budget: Long, onEdit: () -> Unit) {
     val animatedPace by animateFloatAsState(
         targetValue = pace,
         animationSpec = spring(
@@ -446,31 +500,47 @@ private fun BudgetPaceRow(pace: Float, spent: Long, budget: Long) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    "Budget pace",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                androidx.compose.material3.IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        com.mochimoney.app.ui.components.MochiIcons.Edit,
+                        contentDescription = "Edit budget",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Text(
-                "Budget pace",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "${formatCurrency(spent)} / ${formatCurrency(budget)}",
+                if (budget > 0) "${formatCurrency(spent)} / ${formatCurrency(budget)}" else "Set a budget",
                 style = MaterialTheme.typography.labelLarge,
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)),
-        ) {
+        if (budget > 0) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(animatedPace)
+                    .fillMaxWidth()
                     .height(8.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-            )
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(animatedPace)
+                        .height(8.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
         }
     }
 }

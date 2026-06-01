@@ -62,6 +62,9 @@ interface UpiTransactionDao {
     @Query("UPDATE upi_transactions SET categoryId = :categoryId WHERE lower(trim(counterparty)) = lower(trim(:counterparty))")
     fun updateCategoryForCounterparty(counterparty: String, categoryId: String): Int
 
+    @Query("UPDATE upi_transactions SET counterparty = :newName WHERE lower(trim(counterparty)) = lower(trim(:oldName))")
+    fun renameCounterparty(oldName: String, newName: String): Int
+
     @Query("DELETE FROM upi_transactions WHERE id = :id")
     fun delete(id: Long)
 }

@@ -20,6 +20,12 @@ data class MochiMoneyUiState(
     val uncategorizedCount: Int = 0,
     val isRefreshing: Boolean = false,
     val scanStatus: String? = null,
+    /** 0f..1f while a "detect all" LLM run is in flight, null otherwise. */
+    val inferProgress: Float? = null,
+    /** True while any LLM detection (single or all) is running — keeps the popup pinned. */
+    val inferBusy: Boolean = false,
+    /** Non-null shows a manually-dismissed error dialog (e.g. a failed model download). */
+    val downloadError: String? = null,
     val senderPattern: String = "",
     val transactions: List<UpiTransactionUi> = emptyList(),
     val categories: List<CategoryUi> = emptyList(),
@@ -69,7 +75,41 @@ data class SettingsUi(
     val scanSmsAutomatically: Boolean = true,
     val budgetAlerts: Boolean = true,
     val splitwise: SplitwiseSettingsUi = SplitwiseSettingsUi(),
+    val llm: LlmSettingsUi = LlmSettingsUi(),
 )
+
+enum class LlmBackendUi { MediaPipe, GeminiNano }
+
+/** Live result of probing whether Gemini Nano can actually run on this device. */
+enum class GeminiNanoStatusUi { Unknown, Checking, Available, Unavailable }
+
+@Immutable
+data class LlmSettingsUi(
+    val enabled: Boolean = false,
+    val geminiNanoSupported: Boolean = false,
+    val geminiNanoStatus: GeminiNanoStatusUi = GeminiNanoStatusUi.Unknown,
+    val backend: LlmBackendUi = LlmBackendUi.MediaPipe,
+    val models: List<LlmModelUi> = emptyList(),
+    val hfTokenConfigured: Boolean = false,
+)
+
+@Immutable
+data class LlmModelUi(
+    val id: String,
+    val displayName: String,
+    val description: String,
+    val sizeLabel: String,
+    val license: String,
+    val requiresLicenseAcceptance: Boolean,
+    val isInstalled: Boolean,
+    val isActive: Boolean,
+    /** 0f..1f while a download is in flight, null otherwise. */
+    val downloadProgress: Float? = null,
+)
+
+/** Replaces the download progress for [modelId] (null clears it). */
+fun LlmSettingsUi.withProgress(modelId: String, progress: Float?): LlmSettingsUi =
+    copy(models = models.map { if (it.id == modelId) it.copy(downloadProgress = progress) else it })
 
 @Immutable
 data class SplitwiseSettingsUi(
@@ -104,6 +144,17 @@ data class MochiMoneyActions(
     val onConnectSplitwise: (apiKey: String) -> Unit = {},
     val onSelectSplitwiseGroup: (groupId: Long, selected: Boolean) -> Unit = { _, _ -> },
     val onSyncSplitwise: () -> Unit = {},
+    val onToggleLlm: (Boolean) -> Unit = {},
+    val onSelectLlmBackend: (LlmBackendUi) -> Unit = {},
+    val onCheckGeminiNano: () -> Unit = {},
+    val onSetHuggingFaceToken: (String) -> Unit = {},
+    val onDownloadLlmModel: (modelId: String) -> Unit = {},
+    val onDeleteLlmModel: (modelId: String) -> Unit = {},
+    val onActivateLlmModel: (modelId: String) -> Unit = {},
+    val onInferCounterparty: (transactionId: String) -> Unit = {},
+    val onInferAllCounterparties: () -> Unit = {},
+    val onRenameCounterparty: (transactionId: String, name: String) -> Unit = { _, _ -> },
+    val onDismissDownloadError: () -> Unit = {},
 )
 
 fun sampleMochiMoneyUiState(): MochiMoneyUiState {

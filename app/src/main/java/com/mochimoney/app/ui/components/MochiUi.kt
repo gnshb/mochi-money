@@ -217,6 +217,9 @@ fun TransactionRow(
     category: CategoryUi?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    aiEnabled: Boolean = false,
+    onAiClick: () -> Unit = {},
+    onEditClick: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val clickWithHaptics = rememberMochiHapticClick(onClick = onClick)
@@ -272,6 +275,32 @@ fun TransactionRow(
                 style = MaterialTheme.typography.titleMedium,
                 color = if (transaction.isIncoming) MochiPositive else MaterialTheme.colorScheme.onSurface,
             )
+            if (aiEnabled && !transaction.smsBody.isNullOrBlank()) {
+                Spacer(Modifier.width(2.dp))
+                androidx.compose.material3.IconButton(
+                    onClick = rememberMochiHapticClick(onClick = onAiClick),
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        MochiIcons.Ai,
+                        contentDescription = "Detect counterparty with LLM",
+                        tint = MochiSky,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(2.dp))
+            androidx.compose.material3.IconButton(
+                onClick = rememberMochiHapticClick(onClick = onEditClick),
+                modifier = Modifier.size(36.dp),
+            ) {
+                androidx.compose.material3.Icon(
+                    MochiIcons.Edit,
+                    contentDescription = "Edit counterparty name",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

@@ -20,6 +20,9 @@ class RoomUpiTransactionRepository(
         return saved?.toDomain() ?: transaction.copy(id = insertedId.takeIf { it > 0L } ?: transaction.id)
     }
 
+    override fun findById(id: Long): UpiTransaction? =
+        dao.findById(id)?.toDomain()
+
     override fun findByDedupeKey(dedupeKey: String): UpiTransaction? =
         dao.findByDedupeKey(dedupeKey)?.toDomain()
 
@@ -53,6 +56,9 @@ class RoomUpiTransactionRepository(
 
     override fun updateCategoryForCounterparty(counterparty: String, categoryId: String): Int =
         dao.updateCategoryForCounterparty(counterparty, categoryId)
+
+    override fun renameCounterparty(oldName: String, newName: String): Int =
+        dao.renameCounterparty(oldName, newName)
 
     override fun delete(id: Long) {
         dao.delete(id)

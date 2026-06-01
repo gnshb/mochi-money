@@ -24,12 +24,19 @@ android {
         applicationId = "com.mochimoney.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.4"
+        versionCode = 8
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         resourceConfigurations += listOf("en")
+
+        // The MediaPipe LLM engine ships a large native .so per ABI. x86/x86_64 are
+        // emulator-only, so we drop them to keep the APK small. Play delivers only the
+        // device's ABI from the App Bundle anyway; this just trims the universal APK.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -108,6 +115,12 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.coroutines.android)
     implementation(libs.kotlinx.datetime)
+
+    // On-device LLM counterparty detection.
+    // MediaPipe runs user-downloaded small models (e.g. Gemma 3 1B) on all devices.
+    // AICore drives Gemini Nano on supported Pixel/Samsung devices (API 31+, gated at runtime).
+    implementation(libs.mediapipe.tasks.genai)
+    implementation(libs.aicore)
 
     ksp(libs.room.compiler)
 

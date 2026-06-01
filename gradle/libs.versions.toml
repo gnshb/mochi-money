@@ -13,6 +13,8 @@ kotlinxDatetime = "0.6.1"
 junit = "4.13.2"
 testExtJunit = "1.2.1"
 espresso = "3.6.1"
+mediapipeGenai = "0.10.27"
+aicore = "0.0.1-exp01"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -40,6 +42,8 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "testExtJunit" }
 espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
+mediapipe-tasks-genai = { module = "com.google.mediapipe:tasks-genai", version.ref = "mediapipeGenai" }
+aicore = { module = "com.google.ai.edge.aicore:aicore", version.ref = "aicore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

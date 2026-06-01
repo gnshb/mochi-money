@@ -24,6 +24,9 @@ class InMemoryUpiTransactionRepository : UpiTransactionRepository {
     }
 
     @Synchronized
+    override fun findById(id: Long): UpiTransaction? = records[id]
+
+    @Synchronized
     override fun findByDedupeKey(dedupeKey: String): UpiTransaction? {
         val id = dedupeIndex[dedupeKey] ?: return null
         return records[id]
@@ -58,6 +61,19 @@ class InMemoryUpiTransactionRepository : UpiTransactionRepository {
         records.entries.forEach { entry ->
             if (entry.value.counterparty.normalizedCounterpartyKey() == normalized) {
                 entry.setValue(entry.value.copy(categoryId = categoryId))
+                updated += 1
+            }
+        }
+        return updated
+    }
+
+    @Synchronized
+    override fun renameCounterparty(oldName: String, newName: String): Int {
+        val normalized = oldName.normalizedCounterpartyKey()
+        var updated = 0
+        records.entries.forEach { entry ->
+            if (entry.value.counterparty.normalizedCounterpartyKey() == normalized) {
+                entry.setValue(entry.value.copy(counterparty = newName))
                 updated += 1
             }
         }

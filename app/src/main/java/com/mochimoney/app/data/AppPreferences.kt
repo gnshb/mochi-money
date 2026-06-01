@@ -2,6 +2,7 @@ package com.mochimoney.app.data
 
 import android.content.Context
 import com.mochimoney.app.data.splitwise.SplitwiseGroup
+import com.mochimoney.app.domain.model.LlmBackend
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -87,8 +88,61 @@ class AppPreferences(context: Context) {
             preferences.edit().putString(KEY_SPLITWISE_GROUPS, array.toString()).apply()
         }
 
+    var llmCounterpartyEnabled: Boolean
+        get() = preferences.getBoolean(KEY_LLM_ENABLED, false)
+        set(value) {
+            preferences.edit().putBoolean(KEY_LLM_ENABLED, value).apply()
+        }
+
+    var llmBackend: LlmBackend
+        get() = preferences.getString(KEY_LLM_BACKEND, null)
+            ?.let { name -> runCatching { LlmBackend.valueOf(name) }.getOrNull() }
+            ?: LlmBackend.MediaPipe
+        set(value) {
+            preferences.edit().putString(KEY_LLM_BACKEND, value.name).apply()
+        }
+
+    /** Catalog id of the downloaded model used by the MediaPipe backend, or null if none chosen. */
+    var activeLlmModelId: String?
+        get() = preferences.getString(KEY_LLM_ACTIVE_MODEL, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            preferences.edit().putString(KEY_LLM_ACTIVE_MODEL, value).apply()
+        }
+
+    /** Hugging Face read token, used to download license-gated models (e.g. Gemma). */
+    var huggingFaceToken: String
+        get() = preferences.getString(KEY_HF_TOKEN, "").orEmpty()
+        set(value) {
+            preferences.edit().putString(KEY_HF_TOKEN, value.trim()).apply()
+        }
+
+    /**
+     * User-taught counterparty corrections: lowercased detected name -> preferred display name.
+     * Applied to future imports and AI runs so a manual fix sticks.
+     */
+    var counterpartyAliases: Map<String, String>
+        get() {
+            val raw = preferences.getString(KEY_COUNTERPARTY_ALIASES, "{}").orEmpty()
+            return runCatching {
+                val obj = JSONObject(raw)
+                buildMap {
+                    obj.keys().forEach { key -> put(key, obj.getString(key)) }
+                }
+            }.getOrDefault(emptyMap())
+        }
+        set(value) {
+            val obj = JSONObject()
+            value.forEach { (k, v) -> obj.put(k, v) }
+            preferences.edit().putString(KEY_COUNTERPARTY_ALIASES, obj.toString()).apply()
+        }
+
     private companion object {
         const val KEY_ONBOARDING_DONE = "has_completed_onboarding"
+        const val KEY_LLM_ENABLED = "llm_counterparty_enabled"
+        const val KEY_LLM_BACKEND = "llm_backend"
+        const val KEY_LLM_ACTIVE_MODEL = "llm_active_model_id"
+        const val KEY_HF_TOKEN = "huggingface_token"
+        const val KEY_COUNTERPARTY_ALIASES = "counterparty_aliases"
         const val KEY_MONTHLY_BUDGET_PAISE = "monthly_budget_paise"
         const val KEY_SENDER_PATTERN = "sender_pattern"
         const val KEY_SPLITWISE_ENABLED = "splitwise_enabled"

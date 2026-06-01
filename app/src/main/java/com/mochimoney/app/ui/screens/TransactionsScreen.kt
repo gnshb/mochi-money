@@ -53,14 +53,18 @@ fun TransactionsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var selectedCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var detailsForId by remember { mutableStateOf<String?>(null) }
+    var renameForId by remember { mutableStateOf<String?>(null) }
     val openDetails: (String) -> Unit = { detailsForId = it }
+    val openRename: (String) -> Unit = { renameForId = it }
 
+    val today = java.time.LocalDate.now()
     val filteredTransactions = state.transactions.filter { transaction ->
+        val thisMonth = transaction.occurredOn.year == today.year && transaction.occurredOn.month == today.month
         val matchesQuery = query.isBlank() ||
             transaction.title.contains(query, ignoreCase = true) ||
             transaction.subtitle.contains(query, ignoreCase = true)
         val matchesCategory = selectedCategoryId == null || transaction.categoryId == selectedCategoryId
-        matchesQuery && matchesCategory
+        thisMonth && matchesQuery && matchesCategory
     }
 
     val detailsTxn = detailsForId?.let { id -> state.transactions.firstOrNull { it.id == id } }
@@ -68,6 +72,18 @@ fun TransactionsScreen(
         TransactionDetailsDialog(
             transaction = detailsTxn,
             onDismiss = { detailsForId = null },
+        )
+    }
+
+    val renameTxn = renameForId?.let { id -> state.transactions.firstOrNull { it.id == id } }
+    if (renameTxn != null) {
+        RenameCounterpartyDialog(
+            transaction = renameTxn,
+            onSave = { name ->
+                actions.onRenameCounterparty(renameTxn.id, name)
+                renameForId = null
+            },
+            onDismiss = { renameForId = null },
         )
     }
 
@@ -90,6 +106,7 @@ fun TransactionsScreen(
                     filteredTransactions = filteredTransactions,
                     actions = actions,
                     onOpenDetails = openDetails,
+                    onOpenRename = openRename,
                     modifier = Modifier.weight(1.45f),
                 )
                 TransactionSummaryPane(
@@ -108,6 +125,7 @@ fun TransactionsScreen(
                 filteredTransactions = filteredTransactions,
                 actions = actions,
                 onOpenDetails = openDetails,
+                onOpenRename = openRename,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -125,6 +143,7 @@ private fun TransactionsList(
     filteredTransactions: List<UpiTransactionUi>,
     actions: MochiMoneyActions,
     onOpenDetails: (String) -> Unit,
+    onOpenRename: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -187,6 +206,9 @@ private fun TransactionsList(
                     transaction = transaction,
                     category = category,
                     onClick = { onOpenDetails(transaction.id) },
+                    aiEnabled = state.settings.llm.enabled,
+                    onAiClick = { actions.onInferCounterparty(transaction.id) },
+                    onEditClick = { onOpenRename(transaction.id) },
                 )
             }
         }
@@ -278,16 +300,51 @@ private fun TransactionDetailsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
-                    Text(
-                        body,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Text(body, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
         },
+        shape = MochiCardShape,
+        containerColor = MaterialTheme.colorScheme.surface,
+    )
+}
+
+@Composable
+private fun RenameCounterpartyDialog(
+    transaction: UpiTransactionUi,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by rememberSaveable(transaction.id) { mutableStateOf(transaction.title) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename counterparty", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Name") },
+                )
+                Text(
+                    "Also renames matching payments and remembers it for future ones.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name.trim()) },
+                enabled = name.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         shape = MochiCardShape,
         containerColor = MaterialTheme.colorScheme.surface,
     )

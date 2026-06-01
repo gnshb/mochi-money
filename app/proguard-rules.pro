@@ -24,3 +24,9 @@
 # App domain models are persisted via Room mappers; keep them intact.
 -keep class com.mochimoney.app.domain.model.** { *; }
 -keep class com.mochimoney.app.data.local.** { *; }
+
+# On-device LLM SDKs load native code / classes via JNI and reflection.
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
+-keep class com.google.ai.edge.aicore.** { *; }
+-dontwarn com.google.ai.edge.aicore.**

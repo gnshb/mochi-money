@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- AICore (Gemini Nano) targets API 31+; keep the app at minSdk 26 and gate the
+         Gemini Nano path at runtime via GeminiNanoCounterpartyExtractor.isSupported(). -->
+    <uses-sdk tools:overrideLibrary="com.google.ai.edge.aicore" />
 
     <application
         android:name=".MochiMoneyApplication"
