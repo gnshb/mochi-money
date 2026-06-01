@@ -1,7 +1,8 @@
 # 🍡 Mochi Money
 
 A kawaii, offline, open-source Android app that turns the payment SMS already on your
-phone into a spending dashboard.
+phone into a spending dashboard. Optionally runs a small LLM fully on-device to name
+the merchant or person behind each payment — no data ever leaves your phone.
 
 <p align="center">
   <img src="img/dashboard.png" alt="Dashboard" width="240">
@@ -23,10 +24,17 @@ git clone https://github.com/gnshb/mochi-money.git
 cd mochi-money
 ./gradlew :app:assembleDebug          # debug APK
 ./gradlew :app:testDebugUnitTest      # unit tests (parser regressions)
-./gradlew :app:assembleRelease        # minified release APK (~2 MB)
+./gradlew :app:assembleRelease        # minified release APK (~23 MB, bundles the on-device LLM runtime)
 ```
 
 ## Changelog
+
+### v0.3.0
+
+- Added optional on-device LLM counterparty detection: identify the merchant or person on each payment, entirely offline.
+- Download and manage small models in Settings (Qwen 2.5 0.5B/1.5B, SmolLM 135M); uses Gemini Nano via AICore on supported devices.
+- Detect from a per-transaction button or run across all transactions, with progress; rename a counterparty manually and have it remembered for similar payments.
+- Scoped the transactions list to the current month, added a 3-month spending history, and moved budget editing to the dashboard.
 
 ### v0.2.4
 
