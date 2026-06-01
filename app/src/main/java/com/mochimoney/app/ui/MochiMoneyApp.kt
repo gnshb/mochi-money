@@ -8,7 +8,11 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -581,56 +585,102 @@ fun MochiMoneyApp(
 
 @Composable
 private fun SpendingHistoryDialog(state: MochiMoneyUiState, onDismiss: () -> Unit) {
-    val budget = state.monthlyBudget
     val current = java.time.YearMonth.now()
-    val rows = (0..2).map { back ->
+    val catById = state.categories.associateBy { it.id }
+    // The three months BEFORE the current one.
+    val months = (1..3).map { back ->
         val ym = current.minusMonths(back.toLong())
-        val txns = state.transactions.filter {
-            it.occurredOn.year == ym.year && it.occurredOn.monthValue == ym.monthValue
-        }
-        val spent = txns.filterNot { it.isIncoming }.sumOf { it.amountPaise }
-        val received = txns.filter { it.isIncoming }.sumOf { it.amountPaise }
-        Triple(ym, spent, received)
+        val byCategory = state.transactions
+            .asSequence()
+            .filter { !it.isIncoming && it.occurredOn.year == ym.year && it.occurredOn.monthValue == ym.monthValue }
+            .mapNotNull { txn -> catById[txn.categoryId]?.let { it to txn.amountPaise } }
+            .filterNot { it.first.id == DefaultCategoryIds.UNCATEGORIZED || it.first.id == DefaultCategoryIds.INCOME }
+            .groupBy({ it.first }, { it.second })
+            .map { (cat, amounts) -> cat to amounts.sum() }
+            .filter { it.second > 0L }
+            .sortedByDescending { it.second }
+        ym to byCategory
     }
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Last 3 months", style = MaterialTheme.typography.titleLarge) },
         text = {
             androidx.compose.foundation.layout.Column(
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp),
             ) {
-                rows.forEach { (ym, spent, received) ->
+                months.forEach { (ym, byCategory) ->
                     val label = ym.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) +
                         " " + ym.year
-                    val pace = if (budget > 0) (spent.toFloat() / budget).coerceIn(0f, 1f) else 0f
-                    androidx.compose.foundation.layout.Column(
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                    val total = byCategory.sumOf { it.second }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier.size(64.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (total > 0L) {
+                                com.mochimoney.app.ui.components.KawaiiDonutChart(
+                                    segments = byCategory.map { (cat, amount) ->
+                                        com.mochimoney.app.ui.components.DonutSegment(
+                                            fraction = amount.toFloat() / total.toFloat(),
+                                            color = com.mochimoney.app.ui.components.categoryColor(cat.kind),
+                                        )
+                                    },
+                                    modifier = Modifier.matchParentSize(),
+                                    strokeWidth = 10.dp,
+                                )
+                            } else {
+                                androidx.compose.foundation.layout.Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .padding(6.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                )
+                            }
+                        }
+                        androidx.compose.foundation.layout.Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
                         ) {
                             Text(label, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                if (budget > 0) {
-                                    "${com.mochimoney.app.ui.components.formatCurrency(spent)} / ${com.mochimoney.app.ui.components.formatCurrency(budget)}"
-                                } else {
-                                    com.mochimoney.app.ui.components.formatCurrency(spent)
-                                },
-                                style = MaterialTheme.typography.labelLarge,
-                            )
+                            if (total > 0L) {
+                                Text(
+                                    "${com.mochimoney.app.ui.components.formatCurrency(total)} spent",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                byCategory.take(2).forEach { (cat, amount) ->
+                                    val pct = ((amount * 100f) / total).toInt()
+                                    Row(
+                                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        androidx.compose.foundation.layout.Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                                .background(com.mochimoney.app.ui.components.categoryColor(cat.kind)),
+                                        )
+                                        Text(
+                                            "${cat.label} · $pct%",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    "No spending",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                        if (budget > 0) {
-                            androidx.compose.material3.LinearProgressIndicator(
-                                progress = { pace },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        Text(
-                            "Received ${com.mochimoney.app.ui.components.formatCurrency(received)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
