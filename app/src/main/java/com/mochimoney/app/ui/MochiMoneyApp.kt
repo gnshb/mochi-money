@@ -542,6 +542,32 @@ fun MochiMoneyApp(
                 }
             }
         },
+        onAddManualTransaction = { title, amountPaise, occurredOn, isIncoming, categoryId, note ->
+            coroutineScope.launch(Dispatchers.IO) {
+                val added = runCatching {
+                    container.addManualTransaction(
+                        direction = if (isIncoming) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
+                        amountPaise = amountPaise,
+                        occurredOn = occurredOn,
+                        counterparty = title,
+                        note = note,
+                        categoryId = categoryId,
+                    )
+                }
+                val categories = container.categoryRepository.getCategories()
+                val transactions = container.transactionRepository.getAll()
+                withContext(Dispatchers.Main) {
+                    state = loadStateFromRepositories(
+                        categories = categories,
+                        transactions = transactions,
+                        monthlyBudget = container.preferences.monthlyBudgetPaise,
+                        previousState = state,
+                    ).copy(
+                        scanStatus = if (added.isSuccess) "Added transaction." else "Couldn't add transaction.",
+                    )
+                }
+            }
+        },
         onDismissDownloadError = { state = state.copy(downloadError = null) },
     )
 

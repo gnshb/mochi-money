@@ -29,6 +29,11 @@ cd mochi-money
 
 ## Changelog
 
+### v0.3.1
+
+- Add custom transactions by hand from the Transactions page: pick incoming/outgoing, amount, date, counterparty, category, and an optional note.
+- Leave the category on "Auto" to reuse the same keyword matching as imported payments (incoming defaults to Income).
+
 ### v0.3.0
 
 - Added optional on-device LLM counterparty detection: identify the merchant or person on each payment, entirely offline.

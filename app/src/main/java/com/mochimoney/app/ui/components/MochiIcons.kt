@@ -386,6 +386,24 @@ object MochiIcons {
         }
     }
 
+    val Add = icon("Add") {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(11f, 4f)
+            horizontalLineTo(13f)
+            verticalLineTo(11f)
+            horizontalLineTo(20f)
+            verticalLineTo(13f)
+            horizontalLineTo(13f)
+            verticalLineTo(20f)
+            horizontalLineTo(11f)
+            verticalLineTo(13f)
+            horizontalLineTo(4f)
+            verticalLineTo(11f)
+            horizontalLineTo(11f)
+            close()
+        }
+    }
+
     val Other = icon("Other") {
         path(fill = SolidColor(Color.Black)) {
             moveTo(12f, 4f)

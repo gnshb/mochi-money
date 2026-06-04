@@ -154,6 +154,14 @@ data class MochiMoneyActions(
     val onInferCounterparty: (transactionId: String) -> Unit = {},
     val onInferAllCounterparties: () -> Unit = {},
     val onRenameCounterparty: (transactionId: String, name: String) -> Unit = { _, _ -> },
+    val onAddManualTransaction: (
+        title: String,
+        amountPaise: Long,
+        occurredOn: LocalDate,
+        isIncoming: Boolean,
+        categoryId: String?,
+        note: String?,
+    ) -> Unit = { _, _, _, _, _, _ -> },
     val onDismissDownloadError: () -> Unit = {},
 )
 

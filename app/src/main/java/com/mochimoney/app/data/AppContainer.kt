@@ -3,6 +3,7 @@ package com.mochimoney.app.data
 import android.content.Context
 import androidx.room.Room
 import com.mochimoney.app.data.local.MochiMoneyDatabase
+import com.mochimoney.app.data.repository.CategoryKeywordMatcher
 import com.mochimoney.app.data.repository.ExistingTransactionCategoryRefresher
 import com.mochimoney.app.data.repository.ParsedSmsTransactionImporter
 import com.mochimoney.app.data.repository.RoomCategoryRepository
@@ -21,6 +22,7 @@ import com.mochimoney.app.domain.model.LlmBackend
 import com.mochimoney.app.domain.model.LlmModel
 import com.mochimoney.app.domain.model.LlmModelStatus
 import com.mochimoney.app.domain.model.TransactionCategory
+import com.mochimoney.app.domain.model.TransactionDirection
 import com.mochimoney.app.domain.model.UpiTransaction
 import com.mochimoney.app.domain.repository.CategoryRepository
 import com.mochimoney.app.domain.repository.UpiTransactionRepository
@@ -179,6 +181,55 @@ class AppContainer(context: Context) {
         val newCount = transactions.count { it.dedupeKey !in existingKeys }
         transactionRepository.upsertAll(transactions)
         return newCount
+    }
+
+    /**
+     * Stores a user-entered transaction (no SMS backing). When the caller doesn't pick a category,
+     * outgoing payments fall back to keyword matching and incoming ones to Income.
+     */
+    fun addManualTransaction(
+        direction: TransactionDirection,
+        amountPaise: Long,
+        occurredOn: java.time.LocalDate,
+        counterparty: String?,
+        note: String?,
+        categoryId: String?,
+    ): UpiTransaction {
+        val cleanCounterparty = counterparty?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { titleCaseCounterparty(it) }
+        val cleanNote = note?.trim()?.takeIf { it.isNotBlank() }
+        val createdAt = System.currentTimeMillis()
+        // A per-entry nonce keeps two otherwise-identical manual entries from colliding on the dedupe key.
+        val nonce = DedupeKeyGenerator
+            .sha256("manual|$createdAt|${cleanCounterparty.orEmpty()}|$amountPaise")
+            .take(16)
+        val reference = "manual:$nonce"
+        val draft = UpiTransaction(
+            dedupeKey = DedupeKeyGenerator.generate(
+                direction = direction,
+                amountPaise = amountPaise,
+                occurredOn = occurredOn,
+                referenceNumber = reference,
+                accountSuffix = null,
+                counterparty = cleanCounterparty,
+            ),
+            direction = direction,
+            amountPaise = amountPaise,
+            occurredOn = occurredOn,
+            counterparty = cleanCounterparty,
+            referenceNumber = reference,
+            accountSuffix = null,
+            sender = "Manual entry",
+            smsBodyHash = DedupeKeyGenerator.sha256(reference),
+            smsBody = cleanNote,
+            smsReceivedAtMillis = createdAt,
+            categoryId = DefaultCategoryIds.UNCATEGORIZED,
+            createdAtMillis = createdAt,
+        )
+        val resolvedCategory = categoryId?.takeIf { it.isNotBlank() }
+            ?: CategoryKeywordMatcher.matchByKeywords(draft, categoryRepository.getCategories())?.id
+            ?: DefaultCategoryIds.UNCATEGORIZED
+        return transactionRepository.upsert(draft.copy(categoryId = resolvedCategory))
     }
 
     fun applyCategoryRule(transactionId: Long, counterparty: String?, categoryId: String) {
