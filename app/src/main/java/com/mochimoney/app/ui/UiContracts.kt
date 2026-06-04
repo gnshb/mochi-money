@@ -46,6 +46,8 @@ data class UpiTransactionUi(
     val note: String? = null,
     val smsBody: String? = null,
     val isIncoming: Boolean = false,
+    /** True for user-entered transactions (no SMS/Splitwise backing); only these can be deleted. */
+    val isManual: Boolean = false,
 )
 
 @Immutable
@@ -153,7 +155,8 @@ data class MochiMoneyActions(
     val onActivateLlmModel: (modelId: String) -> Unit = {},
     val onInferCounterparty: (transactionId: String) -> Unit = {},
     val onInferAllCounterparties: () -> Unit = {},
-    val onRenameCounterparty: (transactionId: String, name: String) -> Unit = { _, _ -> },
+    val onEditTransaction: (transactionId: String, name: String, amountPaise: Long) -> Unit = { _, _, _ -> },
+    val onDeleteTransaction: (transactionId: String) -> Unit = {},
     val onAddManualTransaction: (
         title: String,
         amountPaise: Long,

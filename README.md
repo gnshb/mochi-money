@@ -29,6 +29,11 @@ cd mochi-money
 
 ## Changelog
 
+### v0.3.2
+
+- The edit dialog now lets you change a transaction's amount, not just its name.
+- Delete manually added transactions from their edit dialog.
+
 ### v0.3.1
 
 - Add custom transactions by hand from the Transactions page: pick incoming/outgoing, amount, date, counterparty, category, and an optional note.

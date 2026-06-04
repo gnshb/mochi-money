@@ -520,13 +520,23 @@ fun MochiMoneyApp(
                 }
             }
         },
-        onRenameCounterparty = { transactionId, name ->
-            val domainId = state.transactions.firstOrNull { it.id == transactionId }?.domainId
+        onEditTransaction = { transactionId, name, amountPaise ->
+            val txn = state.transactions.firstOrNull { it.id == transactionId }
+            val domainId = txn?.domainId
             if (domainId == null || name.isBlank()) {
                 state = state.copy(scanStatus = "Enter a name first.")
             } else {
+                val nameChanged = !name.equals(txn.counterparty ?: txn.title, ignoreCase = true)
+                val amountChanged = amountPaise > 0L && amountPaise != txn.amountPaise
                 coroutineScope.launch(Dispatchers.IO) {
-                    val ok = runCatching { container.renameCounterparty(domainId, name) }.getOrDefault(false)
+                    val renamed = if (nameChanged) {
+                        runCatching { container.renameCounterparty(domainId, name) }.getOrDefault(false)
+                    } else {
+                        false
+                    }
+                    if (amountChanged) {
+                        runCatching { container.updateTransactionAmount(domainId, amountPaise) }
+                    }
                     val categories = container.categoryRepository.getCategories()
                     val transactions = container.transactionRepository.getAll()
                     withContext(Dispatchers.Main) {
@@ -536,8 +546,33 @@ fun MochiMoneyApp(
                             monthlyBudget = container.preferences.monthlyBudgetPaise,
                             previousState = state,
                         ).copy(
-                            scanStatus = if (ok) "Renamed — saved for similar payments too." else "Couldn't rename.",
+                            scanStatus = when {
+                                renamed && amountChanged -> "Updated — name saved for similar payments too."
+                                renamed -> "Renamed — saved for similar payments too."
+                                amountChanged -> "Transaction updated."
+                                else -> "No changes to save."
+                            },
                         )
+                    }
+                }
+            }
+        },
+        onDeleteTransaction = { transactionId ->
+            val domainId = state.transactions.firstOrNull { it.id == transactionId }?.domainId
+            if (domainId == null) {
+                state = state.copy(scanStatus = "Couldn't delete this transaction.")
+            } else {
+                coroutineScope.launch(Dispatchers.IO) {
+                    runCatching { container.deleteTransaction(domainId) }
+                    val categories = container.categoryRepository.getCategories()
+                    val transactions = container.transactionRepository.getAll()
+                    withContext(Dispatchers.Main) {
+                        state = loadStateFromRepositories(
+                            categories = categories,
+                            transactions = transactions,
+                            monthlyBudget = container.preferences.monthlyBudgetPaise,
+                            previousState = state,
+                        ).copy(scanStatus = "Transaction deleted.")
                     }
                 }
             }
@@ -1057,6 +1092,7 @@ private fun loadStateFromRepositories(
             categoryId = transaction.categoryId,
             smsBody = transaction.smsBody,
             isIncoming = transaction.direction == TransactionDirection.CREDIT,
+            isManual = transaction.referenceNumber?.startsWith("manual:") == true,
         )
     }
 

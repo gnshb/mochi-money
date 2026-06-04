@@ -89,12 +89,16 @@ fun TransactionsScreen(
         )
     }
 
-    val renameTxn = renameForId?.let { id -> state.transactions.firstOrNull { it.id == id } }
-    if (renameTxn != null) {
-        RenameCounterpartyDialog(
-            transaction = renameTxn,
-            onSave = { name ->
-                actions.onRenameCounterparty(renameTxn.id, name)
+    val editTxn = renameForId?.let { id -> state.transactions.firstOrNull { it.id == id } }
+    if (editTxn != null) {
+        EditTransactionDialog(
+            transaction = editTxn,
+            onSave = { name, amountPaise ->
+                actions.onEditTransaction(editTxn.id, name, amountPaise)
+                renameForId = null
+            },
+            onDelete = {
+                actions.onDeleteTransaction(editTxn.id)
                 renameForId = null
             },
             onDismiss = { renameForId = null },
@@ -350,15 +354,25 @@ private fun TransactionDetailsDialog(
 }
 
 @Composable
-private fun RenameCounterpartyDialog(
+private fun EditTransactionDialog(
     transaction: UpiTransactionUi,
-    onSave: (String) -> Unit,
+    onSave: (name: String, amountPaise: Long) -> Unit,
+    onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by rememberSaveable(transaction.id) { mutableStateOf(transaction.title) }
+    var amountText by rememberSaveable(transaction.id) { mutableStateOf(rupeeText(transaction.amountPaise)) }
+
+    val amountPaise = runCatching {
+        java.math.BigDecimal(amountText)
+            .movePointRight(2)
+            .setScale(0, java.math.RoundingMode.HALF_UP)
+            .toLong()
+    }.getOrNull()?.takeIf { it > 0L }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename counterparty", style = MaterialTheme.typography.titleLarge) },
+        title = { Text("Edit transaction", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -368,17 +382,33 @@ private fun RenameCounterpartyDialog(
                     singleLine = true,
                     label = { Text("Name") },
                 )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { input -> amountText = input.filter { it.isDigit() || it == '.' } },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Amount in INR") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
                 Text(
-                    "Also renames matching payments and remembers it for future ones.",
+                    "Renaming also updates matching payments and remembers it for future ones.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (transaction.isManual) {
+                    TextButton(
+                        onClick = onDelete,
+                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) { Text("Delete transaction") }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name.trim()) },
-                enabled = name.isNotBlank(),
+                onClick = { onSave(name.trim(), amountPaise ?: transaction.amountPaise) },
+                enabled = name.isNotBlank() && amountPaise != null,
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -386,6 +416,14 @@ private fun RenameCounterpartyDialog(
         containerColor = MaterialTheme.colorScheme.surface,
     )
 }
+
+/** Renders paise as an editable rupee string, dropping the decimals when the amount is whole. */
+private fun rupeeText(amountPaise: Long): String =
+    if (amountPaise % 100L == 0L) {
+        (amountPaise / 100L).toString()
+    } else {
+        java.math.BigDecimal(amountPaise).movePointLeft(2).toPlainString()
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

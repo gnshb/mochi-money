@@ -296,7 +296,7 @@ fun TransactionRow(
             ) {
                 androidx.compose.material3.Icon(
                     MochiIcons.Edit,
-                    contentDescription = "Edit counterparty name",
+                    contentDescription = "Edit transaction",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )

@@ -373,6 +373,20 @@ class AppContainer(context: Context) {
         return true
     }
 
+    /** Changes a transaction's amount (e.g. correcting a manual entry). Returns false if not found. */
+    fun updateTransactionAmount(transactionId: Long, amountPaise: Long): Boolean {
+        if (amountPaise <= 0L) return false
+        val txn = transactionRepository.findById(transactionId) ?: return false
+        if (txn.amountPaise == amountPaise) return true
+        transactionRepository.updateParsedFields(txn.copy(amountPaise = amountPaise))
+        return true
+    }
+
+    /** Permanently removes a transaction. */
+    fun deleteTransaction(transactionId: Long) {
+        transactionRepository.delete(transactionId)
+    }
+
     /** Runs the model on one transaction's SMS, persisting an improved counterparty if found. */
     suspend fun inferCounterparty(transactionId: Long): CounterpartyInferenceResult {
         val txn = transactionRepository.findById(transactionId)
